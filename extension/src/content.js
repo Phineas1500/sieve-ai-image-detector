@@ -33,9 +33,26 @@
     return Math.min(w, h) >= Math.max(MIN_SIZE, settings.minSize);
   }
 
+  function coveredByStickyBar(img, x, y) {
+    // Hide badges for images scrolled behind fixed/sticky page chrome
+    // (e.g. Google's search bar) — our z-index would otherwise punch through.
+    for (const el of document.elementsFromPoint(x, y)) {
+      if (el.classList?.contains("aid-badge")) continue;
+      if (el === img || img.contains(el) || el.contains(img)) return false;
+      const pos = getComputedStyle(el).position;
+      if (pos === "fixed" || pos === "sticky") return true;
+      // anything else (same-tile overlays, wrappers) — keep walking down
+    }
+    return false;
+  }
+
   function positionBadge(img, badge) {
     const r = img.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) {
+    const offscreen =
+      r.width === 0 || r.height === 0 ||
+      r.bottom < 0 || r.top > window.innerHeight ||
+      r.right < 0 || r.left > window.innerWidth;
+    if (offscreen || coveredByStickyBar(img, r.left + 12, r.top + 12)) {
       badge.style.display = "none";
       return;
     }
