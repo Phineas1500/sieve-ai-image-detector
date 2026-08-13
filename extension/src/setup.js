@@ -60,7 +60,7 @@ btn.addEventListener("click", async () => {
       received += value.length;
       if (total) progressEl.style.width = `${(received / total) * 100}%`;
     }
-    const buf = new Blob(chunks).arrayBuffer ? await new Blob(chunks).arrayBuffer() : null;
+    const buf = await new Blob(chunks).arrayBuffer();
     statusEl.textContent = "Verifying checksum…";
     const hash = await sha256hex(buf);
     if (manifest.sha256 && hash !== manifest.sha256) {

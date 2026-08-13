@@ -59,6 +59,7 @@
       badges.set(img, st);
     }
     st.score = score;
+    img.dataset.aidScore = String(score); // exact score, for tests/tooling
     const pct = Math.round(score * 100);
     const isAI = score >= settings.threshold;
     st.badge.textContent = isAI ? `AI ${pct}%` : `${pct}%`;
