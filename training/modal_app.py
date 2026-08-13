@@ -624,7 +624,7 @@ def _train_augment(pil_img, rng, input_size, resize_size):
     return pil_img
 
 
-@app.function(image=image, volumes={DATA: data_vol}, gpu="H100", timeout=43200, cpu=16, memory=65536, secrets=[hf_secret])
+@app.function(image=image, volumes={DATA: data_vol}, gpu="H100", timeout=43200, cpu=32, memory=98304, secrets=[hf_secret])
 def finetune(
     run_name: str = "ft1",
     epochs: int = 2,
@@ -637,6 +637,7 @@ def finetune(
     max_steps: int = 0,
     val_every: int = 1500,
     real_fake_balance: bool = True,
+    val_cap: int = 6000,
 ):
     import random as pyrandom
 
@@ -665,6 +666,9 @@ def finetune(
 
     train_items = load_items(train_manifests)
     val_items = load_items(val_manifest)
+    if val_cap and len(val_items) > val_cap:
+        pyrandom.Random(0).shuffle(val_items)
+        val_items = val_items[:val_cap]
     n_fake = sum(1 for it in train_items if int(it["label"]) == 1)
     n_real = len(train_items) - n_fake
     print(f"train: {len(train_items)} ({n_fake} fake / {n_real} real); val: {len(val_items)}")
@@ -708,12 +712,12 @@ def finetune(
         w_fake, w_real = 0.5 / max(n_fake, 1), 0.5 / max(n_real, 1)
         weights = [w_fake if int(it["label"]) == 1 else w_real for it in train_items]
         sampler = WeightedRandomSampler(weights, num_samples=len(train_items), replacement=True)
-        dl = DataLoader(TrainDS(), batch_size=batch_size, sampler=sampler, num_workers=14,
-                        pin_memory=True, drop_last=True, persistent_workers=True)
+        dl = DataLoader(TrainDS(), batch_size=batch_size, sampler=sampler, num_workers=30,
+                        pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=4)
     else:
-        dl = DataLoader(TrainDS(), batch_size=batch_size, shuffle=True, num_workers=14,
-                        pin_memory=True, drop_last=True, persistent_workers=True)
-    vdl = DataLoader(ValDS(), batch_size=128, num_workers=14, pin_memory=True)
+        dl = DataLoader(TrainDS(), batch_size=batch_size, shuffle=True, num_workers=30,
+                        pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=4)
+    vdl = DataLoader(ValDS(), batch_size=128, num_workers=30, pin_memory=True)
 
     model = ViTClassifier.from_pretrained(hf_repo, device="cpu").cuda()
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.05)
