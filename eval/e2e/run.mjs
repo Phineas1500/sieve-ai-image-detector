@@ -75,8 +75,12 @@ const setup = await browser.newPage();
 setup.on("console", (m) => console.log(`[setup:${m.type()}]`, m.text()));
 setup.on("pageerror", (e) => console.log("[setup:pageerror]", e.message));
 await setup.goto(`chrome-extension://${extId}/src/setup.html`);
-const fileInput = await setup.$("#localfile");
-await fileInput.uploadFile(MODEL);
+if (args.download) {
+  await setup.click("#download"); // real user path: pinned URL + checksum
+} else {
+  const fileInput = await setup.$("#localfile");
+  await fileInput.uploadFile(MODEL);
+}
 try {
   await setup.waitForFunction(
     () => /Sieve is active|inference init failed|Failed/.test(document.getElementById("status").textContent),
