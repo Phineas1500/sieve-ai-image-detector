@@ -40,7 +40,7 @@ image = (
         "pandas",
         "requests",
         "onnx",
-        "onnxruntime-gpu==1.20.1",
+        "onnxruntime-gpu==1.22.0",
         "onnxconverter-common",
     )
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
