@@ -229,7 +229,8 @@ def _degrade(pil_img, view: str):
 
 
 @app.function(image=image, volumes={DATA: data_vol}, gpu="L4", timeout=7200, cpu=8, memory=16384, secrets=[hf_secret])
-def eval_zeroshot(hf_repo: str = "OwensLab/commfor-model-384", input_size: int = 384, views: str = "clean,web,hard"):
+def eval_zeroshot(hf_repo: str = "OwensLab/commfor-model-384", input_size: int = 384,
+                  views: str = "clean,web,hard", ckpt_path: str = "", bias: float = 0.0):
     import numpy as np
     import pandas as pd
     import torch
@@ -277,18 +278,24 @@ def eval_zeroshot(hf_repo: str = "OwensLab/commfor-model-384", input_size: int =
             except Exception:
                 return torch.zeros(3, input_size, input_size), -1
 
-    model = ViTClassifier.from_pretrained(hf_repo)
+    if ckpt_path:
+        model = ViTClassifier(model_size="small", input_size=input_size, patch_size=16, device="cpu")
+        sd = torch.load(ckpt_path, map_location="cpu")
+        model.load_state_dict(sd.get("model_state_dict", sd))
+        tag = ckpt_path.replace(DATA + "/ckpts/", "").replace("/", "_").replace(".pt", "")
+    else:
+        model = ViTClassifier.from_pretrained(hf_repo)
+        tag = hf_repo.split("/")[-1]
     model.eval().cuda()
 
     os.makedirs(f"{DATA}/results", exist_ok=True)
-    tag = hf_repo.split("/")[-1]
     summary = {}
     for view in views.split(","):
         dl = DataLoader(DS(items, view), batch_size=128, num_workers=8, pin_memory=True)
         scores = np.full(len(items), np.nan, dtype=np.float64)
         with torch.no_grad():
             for xb, idx in dl:
-                logits = model(xb.cuda()).squeeze(-1)
+                logits = model(xb.cuda()).squeeze(-1) + bias
                 probs = torch.sigmoid(logits).float().cpu().numpy()
                 for j, i in enumerate(idx.tolist()):
                     if i >= 0:
@@ -605,6 +612,88 @@ def finetune(
     print("final val:", validate())
     data_vol.commit()
     return {"best_val_bal": best_bal, "ckpt": f"{ckdir}/best.pt"}
+
+
+@app.function(image=image, volumes={DATA: data_vol}, gpu="L4", timeout=7200, cpu=8, memory=16384, secrets=[hf_secret])
+def calibrate(ckpt_path: str, input_size: int = 384, val_manifest: str = "openfake_validation",
+              target_threshold: float = 0.65):
+    """Find the bias that maps the balanced-accuracy-optimal operating point to
+    the target threshold. Scores the validation set under all three degradation
+    views pooled (benchmark conditions unknown -> robust middle ground)."""
+    import numpy as np
+    import torch
+    from PIL import Image
+    from torch.utils.data import DataLoader, Dataset
+    from torchvision import transforms
+
+    from vendor.cf_models import ViTClassifier
+
+    Image.MAX_IMAGE_PIXELS = None
+    resize_size = 440 if input_size == 384 else 256
+    post = transforms.Compose([
+        transforms.Resize(resize_size),
+        transforms.CenterCrop(input_size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    with open(f"{DATA}/manifests/{val_manifest}.csv") as f:
+        items = list(csv.DictReader(f))
+
+    model = ViTClassifier(model_size="small", input_size=input_size, patch_size=16, device="cpu")
+    sd = torch.load(ckpt_path, map_location="cpu")
+    model.load_state_dict(sd.get("model_state_dict", sd))
+    model.eval().cuda()
+
+    class DS(Dataset):
+        def __init__(self, view):
+            self.view = view
+
+        def __len__(self):
+            return len(items)
+
+        def __getitem__(self, i):
+            it = items[i]
+            try:
+                img = Image.open(it["path"]).convert("RGB")
+                return post(_degrade(img, self.view)), int(it["label"]), i
+            except Exception:
+                return torch.zeros(3, input_size, input_size), -1, i
+
+    all_z, all_y, view_of = [], [], []
+    with torch.no_grad():
+        for view in DEGRADATIONS:
+            dl = DataLoader(DS(view), batch_size=128, num_workers=8, pin_memory=True)
+            for xb, yb, _ in dl:
+                keep = yb >= 0
+                z = model(xb[keep].cuda()).squeeze(-1).float().cpu().numpy()
+                all_z.append(z)
+                all_y.append(yb[keep].numpy())
+                view_of += [view] * int(keep.sum())
+    z = np.concatenate(all_z)
+    y = np.concatenate(all_y)
+    view_of = np.array(view_of)
+
+    # optimal raw-logit threshold on pooled views
+    cand = np.quantile(z, np.linspace(0.005, 0.995, 400))
+    bals = [((z[y == 1] >= t).mean() + (z[y == 0] < t).mean()) / 2 for t in cand]
+    z_star = float(cand[int(np.argmax(bals))])
+    target_logit = float(np.log(target_threshold / (1 - target_threshold)))
+    bias = target_logit - z_star
+
+    out = {"bias": bias, "z_star": z_star, "pooled_balanced_acc": float(max(bals)), "per_view": {}}
+    for view in DEGRADATIONS:
+        m = view_of == view
+        zb = z[m] + bias
+        s = 1 / (1 + np.exp(-zb))
+        yv = y[m]
+        out["per_view"][view] = round(((s[yv == 1] >= target_threshold).mean()
+                                       + (s[yv == 0] < target_threshold).mean()) / 2, 4)
+    cal_path = os.path.join(os.path.dirname(ckpt_path), "calibration.json")
+    with open(cal_path, "w") as f:
+        json.dump(out, f, indent=2)
+    print(json.dumps(out, indent=2))
+    data_vol.commit()
+    return out
 
 
 @app.function(image=image, volumes={DATA: data_vol}, timeout=1800, cpu=8, memory=16384, secrets=[hf_secret])
