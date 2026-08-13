@@ -417,6 +417,39 @@ def materialize_openfake_split(split: str, fake_cap_per_model: int = 2500, real_
     data_vol.commit()
 
 
+@app.function(image=image, volumes={DATA: data_vol}, timeout=14400, cpu=8, memory=16384, secrets=[hf_secret])
+def materialize_wikiart(cap: int = 15000):
+    """Real paintings as hard negatives — prevents the fine-tune from learning
+    'stylized = AI'. WikiArt images are pre-1900s..2000s human art."""
+    import datasets as hfds
+
+    marker = f"{DATA}/wikiart/.done"
+    if os.path.exists(marker):
+        print("wikiart already materialized")
+        return
+    ds = hfds.load_dataset("huggan/wikiart", split="train", streaming=True, token=_hf_token())
+    ds = ds.cast_column("image", hfds.Image(decode=False))
+    os.makedirs(f"{DATA}/wikiart", exist_ok=True)
+    rows, n = [], 0
+    for ex in ds:
+        if n >= cap:
+            break
+        b = ex["image"]["bytes"]
+        if b is None:
+            continue
+        n += 1
+        p = f"{DATA}/wikiart/wikiart_{n:06d}{_sniff_ext(b)}"
+        with open(p, "wb") as f:
+            f.write(b)
+        rows.append([p, 0, "wikiart", "wikiart"])
+        if n % 5000 == 0:
+            print(f"  {n}/{cap}")
+    _write_manifest(f"{DATA}/manifests/wikiart.csv", rows)
+    open(marker, "w").close()
+    print(f"wikiart: {len(rows)} real paintings")
+    data_vol.commit()
+
+
 # ---------------------------------------------------------------- fine-tuning
 
 def _train_augment(pil_img, rng, input_size, resize_size):
