@@ -56,6 +56,7 @@ const port = server.address().port;
 
 const browser = await puppeteer.launch({
   headless: !!args.headless, // new headless supports extensions; headful for WebGPU on macOS
+  protocolTimeout: 900000,
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
@@ -71,13 +72,25 @@ console.log(`extension loaded: ${extId}`);
 
 // install the model through the setup page's local-file input
 const setup = await browser.newPage();
+setup.on("console", (m) => console.log(`[setup:${m.type()}]`, m.text()));
+setup.on("pageerror", (e) => console.log("[setup:pageerror]", e.message));
 await setup.goto(`chrome-extension://${extId}/src/setup.html`);
 const fileInput = await setup.$("#localfile");
 await fileInput.uploadFile(MODEL);
-await setup.waitForFunction(
-  () => /Sieve is active|inference init failed|Failed/.test(document.getElementById("status").textContent),
-  { timeout: 120000 }
-);
+try {
+  await setup.waitForFunction(
+    () => /Sieve is active|inference init failed|Failed/.test(document.getElementById("status").textContent),
+    { timeout: 120000, polling: 500 } // rAF polling stalls in backgrounded headless tabs
+  );
+} catch (e) {
+  const st = await setup.$eval("#status", (el) => el.textContent).catch(() => "?");
+  console.log(`TIMEOUT waiting for setup; status text was: "${st}"`);
+  const targets = browser.targets().map((t) => `${t.type()} ${t.url()}`);
+  console.log("targets:", targets.join("\n  "));
+  await browser.close();
+  server.close();
+  throw e;
+}
 const setupStatus = await setup.$eval("#status", (el) => el.textContent);
 console.log(`setup: ${setupStatus}`);
 if (!/Sieve is active/.test(setupStatus)) {

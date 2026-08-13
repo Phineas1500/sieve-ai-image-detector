@@ -36,7 +36,16 @@ async function createSession() {
   ort.env.wasm.wasmPaths = chrome.runtime.getURL("vendor/ort/");
   ort.env.wasm.numThreads = 1; // no SharedArrayBuffer in this context
 
+  // Only use WebGPU on a real hardware adapter — software (SwiftShader)
+  // WebGPU is far slower than WASM SIMD.
+  let hardwareGpu = false;
   try {
+    const adapter = await navigator.gpu?.requestAdapter();
+    hardwareGpu = !!adapter && !adapter.isFallbackAdapter;
+  } catch {}
+
+  try {
+    if (!hardwareGpu) throw new Error("no hardware WebGPU adapter");
     const s = await ort.InferenceSession.create(buf, {
       executionProviders: ["webgpu"],
       graphOptimizationLevel: "all",
@@ -44,7 +53,7 @@ async function createSession() {
     ep = "webgpu";
     return s;
   } catch (e) {
-    console.warn("WebGPU EP failed, falling back to WASM:", e);
+    console.warn("WebGPU EP unavailable, falling back to WASM:", e);
     const s = await ort.InferenceSession.create(buf, {
       executionProviders: ["wasm"],
       graphOptimizationLevel: "all",
