@@ -2,6 +2,8 @@
 // CORS), decodes, preprocesses to the model's input, and runs ONNX Runtime Web.
 // All computation is local; nothing is ever sent anywhere.
 
+import { sniffMetadata } from "./forensics.js";
+
 let sessionPromise = null;
 let modelMeta = null;
 let ep = "none";
@@ -119,6 +121,14 @@ let chain = Promise.resolve();
 async function infer(url) {
   const t0 = performance.now();
   const [session, blob] = await Promise.all([getSession(), fetchImage(url)]);
+
+  // High-precision metadata forensics first: a structural marker of AI
+  // generation short-circuits inference (score can only go up, never down).
+  const meta = sniffMetadata(new Uint8Array(await blob.arrayBuffer()));
+  if (meta.hit) {
+    return { ok: true, score: 0.99, ms: Math.round(performance.now() - t0), ep: "metadata", reason: meta.reason };
+  }
+
   const bitmap = await createImageBitmap(blob);
   try {
     if (bitmap.width < 32 || bitmap.height < 32) throw new Error("too-small");
