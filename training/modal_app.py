@@ -941,6 +941,61 @@ def export_onnx(hf_repo: str = "OwensLab/commfor-model-384", input_size: int = 3
     return {"fp32": fp32_path, "fp16": fp16_path, "fp32_err": err, "fp16_err": err16}
 
 
+@app.function(image=image, volumes={DATA: data_vol}, gpu="L4", timeout=1800, cpu=8, memory=16384, secrets=[hf_secret])
+def export_onnx_fp16(hf_repo: str = "OwensLab/commfor-model-384", input_size: int = 384, ckpt_path: str = ""):
+    """Native torch half-precision ONNX export on GPU (the onnxconverter path
+    hangs on this graph). Verified against the fp32 model on random inputs."""
+    import numpy as np
+    import torch
+
+    from vendor.cf_models import ViTClassifier
+
+    if ckpt_path:
+        model = ViTClassifier(model_size="small", input_size=input_size, patch_size=16, device="cpu")
+        sd = torch.load(ckpt_path, map_location="cpu")
+        model.load_state_dict(sd.get("model_state_dict", sd))
+        tag = os.path.basename(os.path.dirname(ckpt_path)) + "_" + os.path.basename(ckpt_path).replace(".pt", "")
+    else:
+        model = ViTClassifier.from_pretrained(hf_repo, device="cpu")
+        tag = hf_repo.split("/")[-1]
+    model.eval().cuda()
+
+    x = torch.randn(4, 3, input_size, input_size, device="cuda")
+    with torch.no_grad():
+        ref = model(x).squeeze(-1).float().cpu().numpy()
+
+    model.half()
+
+    class Fp32Boundary(torch.nn.Module):
+        """fp32 I/O so the extension keeps feeding Float32Array; weights fp16."""
+
+        def __init__(self, m):
+            super().__init__()
+            self.m = m
+
+        def forward(self, x):
+            return self.m(x.half()).float()
+
+    wrapped = Fp32Boundary(model).eval().cuda()
+    os.makedirs(f"{DATA}/models", exist_ok=True)
+    fp16_path = f"{DATA}/models/{tag}_fp16.onnx"
+    torch.onnx.export(
+        wrapped, x, fp16_path,
+        input_names=["input"], output_names=["logit"],
+        dynamic_axes={"input": {0: "batch"}, "logit": {0: "batch"}},
+        opset_version=17,
+    )
+
+    import onnxruntime as onnxrt
+
+    sess = onnxrt.InferenceSession(fp16_path, providers=["CPUExecutionProvider"])
+    out = sess.run(None, {"input": x.cpu().numpy()})[0].squeeze(-1).astype(np.float32)
+    err = float(np.abs(ref - out).max())
+    print(f"fp16 vs fp32 max logit err: {err:.4f}, size {os.path.getsize(fp16_path)/1e6:.1f}MB")
+    data_vol.commit()
+    return {"fp16": fp16_path, "err": err}
+
+
 @app.local_entrypoint()
 def download_all():
     calls = [
