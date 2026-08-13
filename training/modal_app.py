@@ -417,6 +417,147 @@ def materialize_openfake_split(split: str, fake_cap_per_model: int = 2500, real_
     data_vol.commit()
 
 
+# ------------------------------------------------- parallel shard materializer
+#
+# OpenFake's train split is 3.28TB across 608 parquet files; sequential
+# streaming stalls on HF throttling. Instead: sample shards evenly, download
+# them concurrently across a worker fleet (hf_transfer), extract capped
+# subsets. Training images are re-encoded to a compact web tier (shorter side
+# <=768, JPEG q95); eval splits keep original bytes.
+
+
+def _reencode_web_tier(b: bytes) -> bytes:
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(b))
+    img = img.convert("RGB")
+    w, h = img.size
+    if min(w, h) > 768:
+        s = 768 / min(w, h)
+        img = img.resize((round(w * s), round(h * s)), Image.BILINEAR)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
+
+
+@app.function(image=image, volumes={DATA: data_vol}, timeout=7200, cpu=8, memory=32768, secrets=[hf_secret])
+def openfake_shard_worker(task: dict):
+    import pyarrow.parquet as pq
+    from huggingface_hub import hf_hub_download
+
+    subset, files, gid = task["subset"], task["files"], task["gid"]
+    fake_cap_pm, real_cap = task["fake_cap_pm"], task["real_cap"]
+    web_tier = task["web_tier"]
+
+    outdir = f"{DATA}/{subset}"
+    os.makedirs(f"{outdir}/fake", exist_ok=True)
+    os.makedirs(f"{outdir}/real", exist_ok=True)
+    per_model, nreal, rows = {}, 0, []
+
+    for fpath in files:
+        local = hf_hub_download(
+            "ComplexDataLab/OpenFake", fpath, repo_type="dataset",
+            token=_hf_token(), local_dir="/tmp/hfshards",
+        )
+        pf = pq.ParquetFile(local)
+        for batch in pf.iter_batches(batch_size=32, columns=["image", "label", "model"]):
+            imgs, labels, models = batch.column(0), batch.column(1), batch.column(2)
+            for i in range(len(labels)):
+                label = labels[i].as_py()
+                model = (models[i].as_py() or "unknown").replace("/", "_")
+                if label == "fake":
+                    if per_model.get(model, 0) >= fake_cap_pm:
+                        continue
+                    per_model[model] = per_model.get(model, 0) + 1
+                    lab, sub, idx = 1, "fake", per_model[model]
+                else:
+                    if nreal >= real_cap:
+                        continue
+                    nreal += 1
+                    lab, sub, idx = 0, "real", nreal
+                b = imgs[i]["bytes"].as_py()
+                if b is None:
+                    continue
+                if web_tier:
+                    try:
+                        b = _reencode_web_tier(b)
+                    except Exception:
+                        continue
+                    ext = ".jpg"
+                else:
+                    ext = _sniff_ext(b)
+                p = f"{outdir}/{sub}/g{gid}_{model}_{idx:06d}{ext}"
+                with open(p, "wb") as f:
+                    f.write(b)
+                rows.append([p, lab, f"of_{model}" if lab else f"of_real_{model}", subset])
+        os.remove(local)
+        print(f"g{gid}: finished {fpath} (kept {len(rows)})")
+
+    os.makedirs(f"{DATA}/manifests/partial", exist_ok=True)
+    _write_manifest(f"{DATA}/manifests/partial/{subset}_g{gid}.csv", rows)
+    data_vol.commit()
+    return {"gid": gid, "kept": len(rows), "fake_models": len(per_model), "real": nreal}
+
+
+@app.function(image=image, volumes={DATA: data_vol}, timeout=14400, cpu=2, secrets=[hf_secret])
+def materialize_openfake_v2(config: str, split: str, fake_cap_per_model: int, real_cap: int,
+                            sample_files: int = 0, n_groups: int = 16, web_tier: bool = False):
+    from huggingface_hub import HfApi
+
+    subset = {"core": f"openfake_{split}", "reddit": "openfake_reddit"}[config]
+    marker = f"{DATA}/{subset}/.done"
+    if os.path.exists(marker):
+        print(f"{subset} already done")
+        return
+
+    api = HfApi(token=_hf_token())
+    all_files = [f for f in api.list_repo_files("ComplexDataLab/OpenFake", repo_type="dataset")
+                 if f.startswith(f"{config}/{split}-") and f.endswith(".parquet")]
+    all_files.sort()
+    if sample_files and sample_files < len(all_files):
+        step = len(all_files) / sample_files
+        files = [all_files[int(i * step)] for i in range(sample_files)]
+    else:
+        files = all_files
+    n_groups = min(n_groups, len(files))
+    groups = [files[i::n_groups] for i in range(n_groups)]
+    print(f"{subset}: {len(files)}/{len(all_files)} files in {n_groups} groups")
+
+    fake_cap_pm_group = max(2, -(-fake_cap_per_model * 2 // n_groups))
+    real_cap_group = max(10, -(-real_cap * 13 // (10 * n_groups)))
+    tasks = [dict(subset=subset, files=g, gid=i, fake_cap_pm=fake_cap_pm_group,
+                  real_cap=real_cap_group, web_tier=web_tier) for i, g in enumerate(groups)]
+    results = list(openfake_shard_worker.map(tasks))
+    print("worker results:", results)
+
+    # merge partial manifests
+    data_vol.reload()
+    rows = []
+    for i in range(n_groups):
+        p = f"{DATA}/manifests/partial/{subset}_g{i}.csv"
+        if os.path.exists(p):
+            with open(p) as f:
+                rows += [[r["path"], r["label"], r["source"], r["subset"]] for r in csv.DictReader(f)]
+    _write_manifest(f"{DATA}/manifests/{subset}.csv", rows)
+    open(marker, "w").close()
+    n_fake = sum(1 for r in rows if int(r[1]) == 1)
+    print(f"{subset}: TOTAL {n_fake} fake / {len(rows) - n_fake} real")
+    data_vol.commit()
+    return {"subset": subset, "fake": n_fake, "real": len(rows) - n_fake}
+
+
+@app.local_entrypoint()
+def materialize_all_v2():
+    calls = [
+        materialize_openfake_v2.spawn("core", "train", 1500, 100000, sample_files=128, n_groups=32, web_tier=True),
+        materialize_openfake_v2.spawn("core", "validation", 200, 3000, sample_files=8, n_groups=8),
+        materialize_openfake_v2.spawn("core", "test", 500, 4000, sample_files=0, n_groups=13),
+        materialize_openfake_v2.spawn("reddit", "test", 2000, 2000, sample_files=0, n_groups=8),
+    ]
+    for c in calls:
+        print(c.get())
+
+
 @app.function(image=image, volumes={DATA: data_vol}, timeout=14400, cpu=8, memory=16384, secrets=[hf_secret])
 def materialize_wikiart(cap: int = 15000):
     """Real paintings as hard negatives — prevents the fine-tune from learning
