@@ -792,7 +792,7 @@ def finetune(
     return {"best_val_bal": best_bal, "ckpt": f"{ckdir}/best.pt"}
 
 
-@app.function(image=image, volumes={DATA: data_vol}, gpu="L4", timeout=7200, cpu=8, memory=16384, secrets=[hf_secret])
+@app.function(image=image, volumes={DATA: data_vol}, gpu="L4", timeout=7200, cpu=16, memory=32768, secrets=[hf_secret])
 def calibrate(ckpt_path: str, input_size: int = 384, val_manifest: str = "openfake_validation",
               target_threshold: float = 0.65):
     """Find the bias that maps the balanced-accuracy-optimal operating point to
@@ -840,7 +840,7 @@ def calibrate(ckpt_path: str, input_size: int = 384, val_manifest: str = "openfa
     all_z, all_y, view_of = [], [], []
     with torch.no_grad():
         for view in DEGRADATIONS:
-            dl = DataLoader(DS(view), batch_size=128, num_workers=8, pin_memory=True)
+            dl = DataLoader(DS(view), batch_size=128, num_workers=15, pin_memory=True, prefetch_factor=4)
             for xb, yb, _ in dl:
                 keep = yb >= 0
                 z = model(xb[keep].cuda()).squeeze(-1).float().cpu().numpy()
