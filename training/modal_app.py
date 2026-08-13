@@ -228,7 +228,7 @@ def _degrade(pil_img, view: str):
     return Image.open(buf).convert("RGB")
 
 
-@app.function(image=image, volumes={DATA: data_vol}, gpu="L4", timeout=7200, cpu=8, memory=16384, secrets=[hf_secret])
+@app.function(image=image, volumes={DATA: data_vol}, gpu="L4", timeout=14400, cpu=16, memory=32768, secrets=[hf_secret])
 def eval_zeroshot(hf_repo: str = "OwensLab/commfor-model-384", input_size: int = 384,
                   views: str = "clean,web,hard", ckpt_path: str = "", bias: float = 0.0):
     import numpy as np
@@ -291,7 +291,7 @@ def eval_zeroshot(hf_repo: str = "OwensLab/commfor-model-384", input_size: int =
     os.makedirs(f"{DATA}/results", exist_ok=True)
     summary = {}
     for view in views.split(","):
-        dl = DataLoader(DS(items, view), batch_size=128, num_workers=8, pin_memory=True)
+        dl = DataLoader(DS(items, view), batch_size=128, num_workers=15, pin_memory=True, prefetch_factor=4)
         scores = np.full(len(items), np.nan, dtype=np.float64)
         with torch.no_grad():
             for xb, idx in dl:
