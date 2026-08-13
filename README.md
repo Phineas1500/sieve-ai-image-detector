@@ -5,6 +5,23 @@ No cloud inference, no external APIs, no local server. Images never leave your b
 
 Built for the [poidh local-AI challenge](https://poidh.xyz/arbitrum/bounty/323). MIT licensed.
 
+## Results
+
+Held-out proxy benchmark: 36,384 images — SynthBuster (9 commercial 2023 generators,
+never trained on), OpenFake test (2026 frontier: GPT Image 2, Midjourney v7,
+Nano Banana Pro, Flux.2, …), OpenFake reddit (in-the-wild, never trained on),
+COCO val2017 + OpenFake reals. Scored at the fixed **0.65** confidence threshold.
+
+| condition | balanced accuracy | AI recall | real-photo accuracy |
+|---|---|---|---|
+| clean | **91.3%** | 85.6% | 97.1% |
+| web (≤768px, JPEG q60) | **87.3%** | 78.8% | 95.7% |
+| hard (≤512px, JPEG q40) | **84.6%** | 74.1% | 95.0% |
+
+For reference, the stock Community Forensics base model scores 75.8 / 65.9 / 56.5
+under the same protocol (its detection rate on GPT Image 2 is 7%; ours is >90%).
+Inference: ~91ms/image end-to-end (WebGPU, Apple Silicon), ~30ms model time.
+
 ## How it works
 
 - A content script finds images on the page as they approach the viewport
