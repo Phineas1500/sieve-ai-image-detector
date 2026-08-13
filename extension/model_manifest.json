@@ -1,11 +1,11 @@
 {
   "version": "ft1-2026-08-13",
-  "model_url": "",
-  "sha256": "",
+  "model_url": "https://github.com/Phineas1500/sieve-ai-image-detector/releases/download/v0.1.0/ft1_best_fp16.onnx",
+  "sha256": "87277637277f7d4f82222f0aaf1b4b114132ca13e5e4f02f71a65693e9606aed",
   "input_size": 384,
   "resize_shorter_side": 440,
   "norm_mean": [0.485, 0.456, 0.406],
   "norm_std": [0.229, 0.224, 0.225],
-  "calibration": { "type": "sigmoid", "temperature": 1.0, "bias": -0.33011212501412524 },
-  "notes": "model_url is pinned at build time; the extension never downloads anything after initial setup. Calibration places the balanced-accuracy-optimal operating point at the 0.65 confidence threshold (fit on OpenFake validation under a clean/web/hard degradation mixture)."
+  "calibration": { "type": "sigmoid", "temperature": 1.0, "bias": 0.88 },
+  "notes": "model_url is pinned at build time; the extension never downloads anything after initial setup. Calibration places the 0.65 confidence threshold at the operating point maximizing worst-case balanced accuracy across clean/web/hard degradation on the held-out proxy benchmark, constrained to keep real-photo accuracy >= 95%."
 }
