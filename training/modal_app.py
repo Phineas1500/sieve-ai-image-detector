@@ -244,7 +244,7 @@ def eval_zeroshot(hf_repo: str = "OwensLab/commfor-model-384", input_size: int =
     Image.MAX_IMAGE_PIXELS = None
 
     manifests = [f"{DATA}/manifests/{n}.csv" for n in
-                 ("synthbuster", "coco", "openfake_core", "openfake_reddit")]
+                 ("synthbuster", "coco", "openfake_test", "openfake_reddit")]
     items = []
     for m in manifests:
         if not os.path.exists(m):
