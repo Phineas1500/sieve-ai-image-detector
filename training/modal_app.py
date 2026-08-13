@@ -40,7 +40,7 @@ image = (
         "pandas",
         "requests",
         "onnx",
-        "onnxruntime",
+        "onnxruntime-gpu",
         "onnxconverter-common",
     )
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
@@ -998,6 +998,109 @@ def export_onnx_fp16(hf_repo: str = "OwensLab/commfor-model-384", input_size: in
     print(f"fp16 vs fp32 max logit err: {err:.4f}, size {os.path.getsize(fp16_path)/1e6:.1f}MB")
     data_vol.commit()
     return {"fp16": fp16_path, "err": err}
+
+
+NORM_PRESETS = {
+    "imagenet": ([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    "clip": ([0.48145466, 0.4578275, 0.40821073], [0.26862954, 0.26130258, 0.27577711]),
+    "half": ([0.5, 0.5, 0.5], [0.5, 0.5, 0.5]),
+}
+
+
+@app.function(image=image, volumes={DATA: data_vol}, gpu="L4", timeout=14400, cpu=16, memory=32768, secrets=[hf_secret])
+def eval_external(model_path: str, tag: str, input_size: int = 384, resize_size: int = 440,
+                  norm: str = "imagenet", output: str = "logit_sigmoid",
+                  views: str = "clean,web,hard", threshold: float = 0.65):
+    """Score a competitor ONNX model on our benchmark under their preprocessing.
+
+    output: 'logit_sigmoid' (single logit -> sigmoid), 'prob' (already probability),
+            'softmax2_idx1' (2-class logits, AI = index 1), 'softmax2_idx0' (AI = index 0).
+    """
+    import numpy as np
+    import onnxruntime as onnxrt
+    import pandas as pd
+    from PIL import Image
+    from sklearn.metrics import roc_auc_score
+    from torch.utils.data import DataLoader, Dataset
+    import torch
+    from torchvision import transforms
+
+    Image.MAX_IMAGE_PIXELS = None
+    mean, std = NORM_PRESETS[norm]
+    post = transforms.Compose([
+        transforms.Resize(resize_size),
+        transforms.CenterCrop(input_size),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=mean, std=std),
+    ])
+
+    manifests = [f"{DATA}/manifests/{n}.csv" for n in
+                 ("synthbuster", "coco", "openfake_test", "openfake_reddit")]
+    items = []
+    for m in manifests:
+        with open(m) as f:
+            items += list(csv.DictReader(f))
+    print(f"eval set: {len(items)} images; model={model_path}")
+
+    sess = onnxrt.InferenceSession(model_path, providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+    iname = sess.get_inputs()[0].name
+    print("providers:", sess.get_providers())
+
+    class DS(Dataset):
+        def __init__(self, view):
+            self.view = view
+
+        def __len__(self):
+            return len(items)
+
+        def __getitem__(self, i):
+            try:
+                img = Image.open(items[i]["path"]).convert("RGB")
+                return post(_degrade(img, self.view)), i
+            except Exception:
+                return torch.zeros(3, input_size, input_size), -1
+
+    def to_score(out):
+        out = np.asarray(out, dtype=np.float32)
+        if output == "logit_sigmoid":
+            return 1 / (1 + np.exp(-out.reshape(len(out), -1)[:, 0]))
+        if output == "prob":
+            return out.reshape(len(out), -1)[:, 0]
+        z = out.reshape(len(out), -1)
+        e = np.exp(z - z.max(axis=1, keepdims=True))
+        p = e / e.sum(axis=1, keepdims=True)
+        return p[:, 1] if output == "softmax2_idx1" else p[:, 0]
+
+    summary = {}
+    os.makedirs(f"{DATA}/results", exist_ok=True)
+    for view in views.split(","):
+        dl = DataLoader(DS(view), batch_size=64, num_workers=15, pin_memory=False, prefetch_factor=4)
+        scores = np.full(len(items), np.nan)
+        for xb, idx in dl:
+            out = sess.run(None, {iname: xb.numpy()})[0]
+            s = to_score(out)
+            for j, i in enumerate(idx.tolist()):
+                if i >= 0:
+                    scores[i] = s[j]
+        df = pd.DataFrame(items)
+        df["score"] = scores
+        df["label"] = df["label"].astype(int)
+        df = df.dropna(subset=["score"])
+        df.to_csv(f"{DATA}/results/ext_{tag}_{view}.csv", index=False)
+        real, fake = df[df.label == 0], df[df.label == 1]
+        tpr = float((fake.score >= threshold).mean())
+        tnr = float((real.score < threshold).mean())
+        ths = np.linspace(0.01, 0.99, 197)
+        best = max(((fake.score.values >= t).mean() + (real.score.values < t).mean()) / 2 for t in ths)
+        summary[view] = dict(
+            balanced_acc_at_065=round((tpr + tnr) / 2, 4), tpr=round(tpr, 4), tnr=round(tnr, 4),
+            auc=round(float(roc_auc_score(df.label, df.score)), 4), best_balanced_acc=round(float(best), 4),
+        )
+        print(f"=== {tag} view={view}: {json.dumps(summary[view])}")
+    with open(f"{DATA}/results/ext_{tag}_summary.json", "w") as f:
+        json.dump(summary, f, indent=2)
+    data_vol.commit()
+    return summary
 
 
 @app.local_entrypoint()
