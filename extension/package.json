@@ -1,0 +1,12 @@
+{
+  "name": "sieve-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Build tooling for the Sieve local AI image detector Chrome extension",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "onnxruntime-web": "1.22.0"
+  }
+}

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sieve Options</title>
+    <style>
+      body { font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+             max-width: 560px; margin: 40px auto; padding: 0 20px; color: #1c2430; }
+      .row { display: flex; justify-content: space-between; align-items: center; margin: 14px 0; }
+      .hint { color: #64748b; font-size: 12.5px; margin: -8px 0 14px; }
+    </style>
+  </head>
+  <body>
+    <h1>Sieve Options</h1>
+    <div class="row"><label for="enabled">Enable detection</label><input type="checkbox" id="enabled" /></div>
+    <div class="row"><label for="blur">Blur images flagged as AI</label><input type="checkbox" id="blur" /></div>
+    <div class="row">
+      <label for="threshold">Confidence threshold: <b id="thval"></b></label>
+      <input type="range" id="threshold" min="0.5" max="0.95" step="0.01" />
+    </div>
+    <p class="hint">Images scoring at or above this AI-confidence are flagged (bounty evaluation uses 65%).</p>
+    <div class="row">
+      <label for="minSize">Minimum image size to analyze (px)</label>
+      <input type="number" id="minSize" min="64" max="512" step="16" style="width: 70px" />
+    </div>
+    <p class="hint">Smaller images (icons, avatars) are skipped for speed.</p>
+    <script src="options.js"></script>
+  </body>
+</html>

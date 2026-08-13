@@ -1,0 +1,11 @@
+{
+  "version": "dev-0",
+  "model_url": "",
+  "sha256": "",
+  "input_size": 384,
+  "resize_shorter_side": 440,
+  "norm_mean": [0.485, 0.456, 0.406],
+  "norm_std": [0.229, 0.224, 0.225],
+  "calibration": { "type": "sigmoid", "temperature": 1.0, "bias": 0.0 },
+  "notes": "model_url is pinned at build time; the extension never downloads anything after initial setup."
+}

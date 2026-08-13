@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sieve — Setup</title>
+    <style>
+      body { font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+             max-width: 620px; margin: 60px auto; padding: 0 20px; color: #1c2430; }
+      h1 { font-size: 22px; }
+      .bar { height: 10px; background: #e7ebf0; border-radius: 5px; overflow: hidden; margin: 18px 0; }
+      .bar > div { height: 100%; width: 0%; background: #3b82f6; transition: width 0.2s; }
+      button { padding: 8px 18px; border-radius: 8px; border: 1px solid #cbd5e1;
+               background: #3b82f6; color: white; font-size: 15px; cursor: pointer; }
+      button:disabled { background: #9db8dd; cursor: default; }
+      #status { color: #475569; min-height: 24px; }
+      .dev { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <h1>Sieve — one-time model setup</h1>
+    <p>
+      Sieve needs to download its detection model once (~45&nbsp;MB). After this download,
+      everything runs entirely on your device — no image ever leaves your browser, and no
+      further downloads happen.
+    </p>
+    <div class="bar"><div id="progress"></div></div>
+    <p id="status">Ready to download.</p>
+    <button id="download">Download model</button>
+    <div class="dev">
+      <p>Developer: load a local .onnx file instead.</p>
+      <input type="file" id="localfile" accept=".onnx" />
+    </div>
+    <script src="setup.js"></script>
+  </body>
+</html>

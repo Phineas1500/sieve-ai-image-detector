@@ -1,0 +1,22 @@
+.aid-badge {
+  position: absolute;
+  z-index: 2147483646;
+  padding: 2px 7px;
+  border-radius: 10px;
+  font: 600 11px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: rgba(30, 30, 30, 0.72);
+  color: #d8f5d0;
+  cursor: pointer;
+  user-select: none;
+  pointer-events: auto;
+  backdrop-filter: blur(2px);
+}
+
+.aid-badge.aid-flagged {
+  background: rgba(180, 32, 32, 0.88);
+  color: #fff;
+}
+
+img.aid-blurred {
+  filter: blur(18px) saturate(0.6) !important;
+}

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+             width: 260px; margin: 0; padding: 14px; color: #1c2430; }
+      h1 { font-size: 15px; margin: 0 0 10px; }
+      .row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; }
+      .stat { font-weight: 700; }
+      #ep { color: #64748b; font-size: 12px; }
+      input[type="range"] { width: 130px; }
+      a { color: #3b82f6; }
+    </style>
+  </head>
+  <body>
+    <h1>Sieve — AI Image Detector</h1>
+    <div class="row"><span>Enabled</span><input type="checkbox" id="enabled" /></div>
+    <div class="row"><span>Blur flagged images</span><input type="checkbox" id="blur" /></div>
+    <div class="row">
+      <span>Threshold <span id="thval"></span></span>
+      <input type="range" id="threshold" min="0.5" max="0.95" step="0.01" />
+    </div>
+    <div class="row"><span>Analyzed on this page</span><span class="stat" id="analyzed">–</span></div>
+    <div class="row"><span>Flagged as AI</span><span class="stat" id="flagged">–</span></div>
+    <div class="row"><span>Model</span><span id="ep">checking…</span></div>
+    <div class="row"><a href="#" id="setup">Model setup</a><a href="#" id="options">Options</a></div>
+    <script src="popup.js"></script>
+  </body>
+</html>
