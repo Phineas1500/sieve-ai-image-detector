@@ -192,7 +192,18 @@
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        for (const [img, st] of badges) positionBadge(img, st.badge);
+        for (const [img, st] of badges) {
+          // Feeds remove/virtualize images as you scroll; reclaim their badges
+          // or they accumulate forever. Dropping from `seen` lets a re-attached
+          // node re-analyze (cache makes that instant) — self-healing.
+          if (!img.isConnected) {
+            st.badge.remove();
+            badges.delete(img);
+            seen.delete(img);
+            continue;
+          }
+          positionBadge(img, st.badge);
+        }
         ticking = false;
       });
     };
