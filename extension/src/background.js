@@ -77,7 +77,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 chrome.runtime.onInstalled.addListener(async (details) => {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: "aid-check-image",
+      title: "Sieve: check this image",
+      contexts: ["image"],
+    });
+  });
   if (details.reason === "install") {
     chrome.tabs.create({ url: chrome.runtime.getURL("src/setup.html") });
+  }
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "aid-check-image" && tab?.id && info.srcUrl) {
+    chrome.tabs.sendMessage(tab.id, { kind: "aid:check-image", srcUrl: info.srcUrl });
   }
 });

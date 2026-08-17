@@ -24,6 +24,15 @@
       <input type="number" id="minSize" min="64" max="512" step="16" style="width: 70px" />
     </div>
     <p class="hint">Smaller images (icons, avatars) are skipped for speed.</p>
+    <div class="row">
+      <label for="minDisplaySize">Minimum on-screen size to badge (px)</label>
+      <input type="number" id="minDisplaySize" min="40" max="400" step="10" style="width: 70px" />
+    </div>
+    <p class="hint">
+      Images displayed smaller than this (profile pictures, thumbnails) are left alone —
+      right-click any image → “Sieve: check this image” to score one on demand.
+      They are analyzed automatically if expanded.
+    </p>
     <script src="options.js"></script>
   </body>
 </html>

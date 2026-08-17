@@ -4,7 +4,7 @@
   const MIN_SIZE = 64; // skip icons
   const seen = new WeakSet();
   const badges = new Map(); // img -> {badge, score}
-  let settings = { enabled: true, threshold: 0.65, blur: true, minSize: 96 };
+  let settings = { enabled: true, threshold: 0.65, blur: true, minSize: 96, minDisplaySize: 100 };
   let flaggedCount = 0;
   let analyzedCount = 0;
 
@@ -24,13 +24,47 @@
     if (msg?.kind === "aid:page-stats") {
       sendResponse({ analyzed: analyzedCount, flagged: flaggedCount });
     }
+    if (msg?.kind === "aid:check-image" && msg.srcUrl) {
+      // right-click "Check this image": bypass size gates for this one image
+      document.querySelectorAll("img").forEach((img) => {
+        if (img.currentSrc === msg.srcUrl) analyze(img, true);
+      });
+    }
   });
 
-  function eligible(img) {
-    if (!img.currentSrc) return false;
-    if (img.currentSrc.startsWith("blob:")) return false; // cannot fetch cross-context
+  function fetchable(img) {
+    return !!img.currentSrc && !img.currentSrc.startsWith("blob:"); // blob: cannot be fetched cross-context
+  }
+
+  function eligibleNaturalSize(img) {
     const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
     return Math.min(w, h) >= Math.max(MIN_SIZE, settings.minSize);
+  }
+
+  // Avatars and thumbnails are often large source files displayed tiny —
+  // badging them clutters feeds. Gate on on-screen size, not file size.
+  function displayedLargeEnough(img) {
+    const r = img.getBoundingClientRect();
+    return Math.min(r.width, r.height) >= settings.minDisplaySize;
+  }
+
+  // If a skipped-small image later grows (lightbox, in-place expansion),
+  // analyze it then.
+  const growthWatched = new WeakSet();
+  const growthObserver = new ResizeObserver((entries) => {
+    for (const e of entries) {
+      const img = e.target;
+      if (displayedLargeEnough(img)) {
+        growthObserver.unobserve(img);
+        analyze(img);
+      }
+    }
+  });
+
+  function watchForGrowth(img) {
+    if (growthWatched.has(img)) return;
+    growthWatched.add(img);
+    growthObserver.observe(img);
   }
 
   function coveredByStickyBar(img, x, y) {
@@ -88,8 +122,15 @@
     positionBadge(img, st.badge);
   }
 
-  async function analyze(img) {
-    if (seen.has(img) || !eligible(img)) return;
+  async function analyze(img, force = false) {
+    if (seen.has(img) || !fetchable(img)) return;
+    if (!force) {
+      if (!eligibleNaturalSize(img)) return;
+      if (!displayedLargeEnough(img)) {
+        watchForGrowth(img);
+        return;
+      }
+    }
     seen.add(img);
     const url = img.currentSrc;
     try {
