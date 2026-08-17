@@ -112,12 +112,19 @@
     st.score = score;
     img.dataset.aidScore = String(score); // exact score, for tests/tooling
     const pct = Math.round(score * 100);
-    const isAI = score >= settings.threshold;
-    st.badge.textContent = isAI ? `AI ${pct}%` : `${pct}%`;
+    const thr = settings.threshold;
+    const isAI = score >= thr;
+    // Above 50% the model leans AI even when below the flag threshold —
+    // show that honestly instead of a bare number that reads as "safe".
+    const isUnsure = !isAI && score >= 0.5;
+    st.badge.textContent = isAI ? `AI ${pct}%` : isUnsure ? `unsure ${pct}%` : `${pct}%`;
     st.badge.classList.toggle("aid-flagged", isAI);
+    st.badge.classList.toggle("aid-unsure", isUnsure);
     st.badge.title = isAI
       ? `Likely AI-generated (confidence ${pct}%). Click to toggle blur.`
-      : `Likely real (AI confidence ${pct}%)`;
+      : isUnsure
+        ? `Uncertain — AI confidence ${pct}%, below the ${Math.round(thr * 100)}% flag threshold`
+        : `Likely real (AI confidence ${pct}%)`;
     img.classList.toggle("aid-blurred", isAI && settings.blur);
     positionBadge(img, st.badge);
   }

@@ -130,6 +130,30 @@ const results = await page.$$eval("img[data-aid-score]", (imgs) =>
 console.log(`analyzed ${results.length} images in ${(elapsed / 1000).toFixed(1)}s (${(elapsed / results.length).toFixed(0)}ms/img incl. queueing)`);
 for (const r of results) console.log(`  ${r.score.toFixed(4)}  ${r.file}`);
 
+// badge band audit: red "AI n%" >= 0.65, amber "unsure n%" in [0.5, 0.65), bare percent below
+const audit = await page.evaluate(() => {
+  const badges = [...document.querySelectorAll(".aid-badge")];
+  return {
+    flaggedClass: badges.filter((b) => b.classList.contains("aid-flagged")).length,
+    unsureClass: badges.filter((b) => b.classList.contains("aid-unsure")).length,
+    aiText: badges.filter((b) => b.textContent.startsWith("AI ")).length,
+    unsureText: badges.filter((b) => b.textContent.startsWith("unsure ")).length,
+  };
+});
+const expected = {
+  flagged: results.filter((r) => r.score >= 0.65).length,
+  unsure: results.filter((r) => r.score >= 0.5 && r.score < 0.65).length,
+};
+const bandsOk =
+  audit.flaggedClass === expected.flagged && audit.aiText === expected.flagged &&
+  audit.unsureClass === expected.unsure && audit.unsureText === expected.unsure;
+console.log(`badge bands: flagged ${audit.flaggedClass}/${expected.flagged}, unsure ${audit.unsureClass}/${expected.unsure} -> ${bandsOk ? "OK" : "MISMATCH"}`);
+if (!bandsOk) process.exitCode = 1;
+if (expected.unsure === 0) {
+  console.log("WARNING: no unsure-band image in sample set — band rendering untested");
+  process.exitCode = 1;
+}
+
 writeFileSync(OUT, JSON.stringify(results, null, 2));
 console.log(`wrote ${OUT}`);
 

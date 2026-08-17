@@ -42,5 +42,17 @@
   {
     "file": "fake_r1f5ad4e0t.png",
     "score": 0.9999931798686049
+  },
+  {
+    "file": "unsure_cand_448263.jpg",
+    "score": 0.6281496881911379
+  },
+  {
+    "file": "unsure_cand_566282.jpg",
+    "score": 0.4177749752797147
+  },
+  {
+    "file": "unsure_flux2_000048.jpg",
+    "score": 0.6540102485091948
   }
 ]

@@ -17,6 +17,11 @@
   color: #fff;
 }
 
+.aid-badge.aid-unsure {
+  background: rgba(186, 122, 18, 0.88);
+  color: #fff;
+}
+
 img.aid-blurred {
   filter: blur(18px) saturate(0.6) !important;
 }
