@@ -1103,6 +1103,132 @@ def eval_external(model_path: str, tag: str, input_size: int = 384, resize_size:
     return summary
 
 
+@app.function(image=image, volumes={DATA: data_vol}, gpu="L4", timeout=10800, cpu=12, memory=24576, secrets=[hf_secret])
+def eval_tta_logits(ckpt_path: str = "/data/ckpts/ft1/best.pt", bias: float = 0.88,
+                    band_lo: float = 0.25, band_hi: float = 0.85, input_size: int = 384,
+                    views: str = "clean,web,hard"):
+    """Selective-TTA experiment, stage 1: per-image logits for the standard view
+    (all images) plus three candidate extra views (uncertainty-band images only):
+    v1 = tighter resize-512 center crop, v2 = mirrored standard, v3 = native-res
+    center crop. Band/view-set combinations are then evaluated offline."""
+    import numpy as np
+    import pandas as pd
+    import torch
+    from PIL import Image
+    from torch.utils.data import DataLoader, Dataset
+    from torchvision import transforms
+
+    from vendor.cf_models import ViTClassifier
+
+    Image.MAX_IMAGE_PIXELS = None
+    C = input_size
+    norm = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+
+    def resize_cc(img, S):
+        w, h = img.size
+        s = S / min(w, h)
+        img = img.resize((max(C, round(w * s)), max(C, round(h * s))), Image.BILINEAR)
+        w, h = img.size
+        return img.crop(((w - C) // 2, (h - C) // 2, (w - C) // 2 + C, (h - C) // 2 + C))
+
+    def native_cc(img):
+        w, h = img.size
+        if min(w, h) < C:
+            return None
+        return img.crop(((w - C) // 2, (h - C) // 2, (w - C) // 2 + C, (h - C) // 2 + C))
+
+    manifests = [f"{DATA}/manifests/{n}.csv" for n in
+                 ("synthbuster", "coco", "openfake_test", "openfake_reddit")]
+    items = []
+    for m in manifests:
+        with open(m) as f:
+            items += list(csv.DictReader(f))
+    print(f"eval set: {len(items)}")
+
+    model = ViTClassifier(model_size="small", input_size=C, patch_size=16, device="cpu")
+    sd = torch.load(ckpt_path, map_location="cpu")
+    model.load_state_dict(sd.get("model_state_dict", sd))
+    model.eval().cuda()
+
+    class StdDS(Dataset):
+        def __init__(self, view):
+            self.view = view
+
+        def __len__(self):
+            return len(items)
+
+        def __getitem__(self, i):
+            try:
+                img = Image.open(items[i]["path"]).convert("RGB")
+                return norm(resize_cc(_degrade(img, self.view), 440)), i
+            except Exception:
+                return torch.zeros(3, C, C), -1
+
+    class TtaDS(Dataset):
+        def __init__(self, view, idxs):
+            self.view, self.idxs = view, idxs
+
+        def __len__(self):
+            return len(self.idxs)
+
+        def __getitem__(self, k):
+            i = self.idxs[k]
+            try:
+                img = Image.open(items[i]["path"]).convert("RGB")
+                img = _degrade(img, self.view)
+                std = resize_cc(img, 440)
+                v1 = resize_cc(img, 512)
+                v2 = std.transpose(Image.FLIP_LEFT_RIGHT)
+                v3 = native_cc(img)
+                x = torch.stack([norm(v1), norm(v2), norm(v3) if v3 is not None else torch.zeros(3, C, C)])
+                mask = torch.tensor([1.0, 1.0, 1.0 if v3 is not None else 0.0])
+                return x, mask, i
+            except Exception:
+                return torch.zeros(3, 3, C, C), torch.zeros(3), -1
+
+    os.makedirs(f"{DATA}/results", exist_ok=True)
+    for view in views.split(","):
+        dl = DataLoader(StdDS(view), batch_size=128, num_workers=11, pin_memory=True, prefetch_factor=4)
+        z_std = np.full(len(items), np.nan)
+        with torch.no_grad():
+            for xb, idx in dl:
+                z = model(xb.cuda()).squeeze(-1).float().cpu().numpy()
+                for j, i in enumerate(idx.tolist()):
+                    if i >= 0:
+                        z_std[i] = z[j]
+        s = 1 / (1 + np.exp(-(z_std + bias)))
+        band_idx = [i for i in range(len(items))
+                    if not np.isnan(z_std[i]) and band_lo <= s[i] <= band_hi]
+        print(f"{view}: {len(band_idx)}/{len(items)} in [{band_lo},{band_hi}] band")
+
+        z_extra = np.full((len(items), 3), np.nan)
+        tdl = DataLoader(TtaDS(view, band_idx), batch_size=42, num_workers=11, pin_memory=True, prefetch_factor=4)
+        with torch.no_grad():
+            for xb, mb, idx in tdl:
+                B = xb.shape[0]
+                z = model(xb.view(B * 3, 3, C, C).cuda()).squeeze(-1).float().cpu().numpy().reshape(B, 3)
+                for j, i in enumerate(idx.tolist()):
+                    if i < 0:
+                        continue
+                    for v in range(3):
+                        if mb[j, v] > 0:
+                            z_extra[i, v] = z[j, v]
+
+        df = pd.DataFrame({
+            "path": [it["path"] for it in items],
+            "label": [int(it["label"]) for it in items],
+            "source": [it["source"] for it in items],
+            "z_std": z_std, "z_v1": z_extra[:, 0], "z_v2": z_extra[:, 1], "z_v3": z_extra[:, 2],
+        })
+        df.to_csv(f"{DATA}/results/tta_{view}.csv", index=False)
+        data_vol.commit()
+        print(f"{view}: saved")
+    return "done"
+
+
 @app.local_entrypoint()
 def download_all():
     calls = [
