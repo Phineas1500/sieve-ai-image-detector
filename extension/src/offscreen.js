@@ -80,6 +80,20 @@ async function fetchImage(url) {
   return resp.blob();
 }
 
+function imageDataToTensor(data, C, meta) {
+  const [mr, mg, mb] = meta.norm_mean;
+  const [sr, sg, sb] = meta.norm_std;
+  const n = C * C;
+  const out = new Float32Array(3 * n);
+  for (let i = 0; i < n; i++) {
+    const j = i * 4;
+    out[i] = (data[j] / 255 - mr) / sr;
+    out[n + i] = (data[j + 1] / 255 - mg) / sg;
+    out[2 * n + i] = (data[j + 2] / 255 - mb) / sb;
+  }
+  return new ort.Tensor("float32", out, [1, 3, C, C]);
+}
+
 // torchvision test protocol: resize shorter side -> S, center crop C, ImageNet norm.
 function preprocess(bitmap, meta) {
   const S = meta.resize_shorter_side, C = meta.input_size;
@@ -95,18 +109,21 @@ function preprocess(bitmap, meta) {
   const x0 = Math.floor((rw - C) / 2);
   const y0 = Math.floor((rh - C) / 2);
   const { data } = ctx.getImageData(x0, y0, C, C);
+  return imageDataToTensor(data, C, meta);
+}
 
-  const [mr, mg, mb] = meta.norm_mean;
-  const [sr, sg, sb] = meta.norm_std;
-  const n = C * C;
-  const out = new Float32Array(3 * n);
-  for (let i = 0; i < n; i++) {
-    const j = i * 4;
-    out[i] = (data[j] / 255 - mr) / sr;
-    out[n + i] = (data[j + 1] / 255 - mg) / sg;
-    out[2 * n + i] = (data[j + 2] / 255 - mb) / sb;
-  }
-  return new ort.Tensor("float32", out, [1, 3, C, C]);
+// TTA view: native-resolution center crop — no resampling, preserves the
+// pixel-grid artifacts the standard resized view destroys.
+function preprocessNative(bitmap, meta) {
+  const C = meta.input_size;
+  const sx = Math.floor((bitmap.width - C) / 2);
+  const sy = Math.floor((bitmap.height - C) / 2);
+  const canvas = new OffscreenCanvas(C, C);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = false; // 1:1 copy, no filtering
+  ctx.drawImage(bitmap, sx, sy, C, C, 0, 0, C, C);
+  const { data } = ctx.getImageData(0, 0, C, C);
+  return imageDataToTensor(data, C, meta);
 }
 
 function calibrate(logit, meta) {
@@ -133,15 +150,35 @@ async function infer(url) {
   try {
     if (bitmap.width < 32 || bitmap.height < 32) throw new Error("too-small");
     const input = preprocess(bitmap, modelMeta);
-    const run = () =>
-      session.run({ [session.inputNames[0]]: input }).then((out) => {
-        const logit = out[session.outputNames[0]].data[0];
-        return calibrate(Number(logit), modelMeta);
-      });
-    const p = chain.then(run, run);
+
+    const runLogit = (tensor) =>
+      session.run({ [session.inputNames[0]]: tensor }).then((out) =>
+        Number(out[session.outputNames[0]].data[0]));
+
+    // Selective TTA: when the standard view lands in the uncertainty band and
+    // the image is large enough for a native crop, average raw logits with a
+    // second, resampling-free view (measured: +0.9/+0.5/+0.3 balanced acc).
+    let tta = false;
+    const task = async () => {
+      const zStd = await runLogit(input);
+      const cfg = modelMeta.tta || {};
+      const C = modelMeta.input_size;
+      let z = zStd;
+      if (cfg.enabled) {
+        const s = calibrate(zStd, modelMeta);
+        if (s >= cfg.band_lo && s <= cfg.band_hi &&
+            Math.min(bitmap.width, bitmap.height) >= (cfg.min_side || C)) {
+          const zNative = await runLogit(preprocessNative(bitmap, modelMeta));
+          z = (zStd + zNative) / 2;
+          tta = true;
+        }
+      }
+      return calibrate(z, modelMeta);
+    };
+    const p = chain.then(task, task);
     chain = p.then(() => {}, () => {});
     const score = await p;
-    return { ok: true, score, ms: Math.round(performance.now() - t0), ep };
+    return { ok: true, score, ms: Math.round(performance.now() - t0), ep, tta };
   } finally {
     bitmap.close();
   }

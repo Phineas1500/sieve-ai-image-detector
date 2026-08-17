@@ -145,6 +145,7 @@
       if (resp && typeof resp.score === "number") {
         analyzedCount++;
         if (resp.score >= settings.threshold) flaggedCount++;
+        img.dataset.aidTta = String(!!resp.tta); // diagnostics/tests
         applyResult(img, resp.score);
       }
     } catch {

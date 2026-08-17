@@ -40,7 +40,7 @@ async function analyze(url) {
     await ensureOffscreen();
     const resp = await chrome.runtime.sendMessage({ kind: "aid:infer", url });
     if (resp && resp.ok) {
-      const result = { score: resp.score, ms: resp.ms };
+      const result = { score: resp.score, ms: resp.ms, tta: !!resp.tta };
       cachePut(url, result);
       return result;
     }

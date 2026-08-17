@@ -154,6 +154,23 @@ if (expected.unsure === 0) {
   process.exitCode = 1;
 }
 
+// selective TTA audit: mid-band images >=384px must have gotten the second view
+const ttaAudit = await page.$$eval("img[data-aid-score]", (imgs) =>
+  imgs.map((img) => ({
+    file: img.dataset.file,
+    score: Number(img.dataset.aidScore),
+    tta: img.dataset.aidTta === "true",
+    minSide: Math.min(img.naturalWidth, img.naturalHeight),
+  }))
+);
+const ttaFired = ttaAudit.filter((r) => r.tta).length;
+const shouldHave = ttaAudit.filter((r) => r.score > 0.3 && r.score < 0.8 && r.minSide >= 384);
+console.log(`selective TTA: fired on ${ttaFired} images (${shouldHave.length} clearly in-band)`);
+if (shouldHave.length > 0 && ttaFired === 0) {
+  console.log("FAIL: in-band images present but TTA never fired");
+  process.exitCode = 1;
+}
+
 writeFileSync(OUT, JSON.stringify(results, null, 2));
 console.log(`wrote ${OUT}`);
 
