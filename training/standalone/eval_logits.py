@@ -39,6 +39,7 @@ def main():
     ap.add_argument("--tag", required=True)
     ap.add_argument("--input-size", type=int, default=384)
     ap.add_argument("--views", default="clean,web,hard")
+    ap.add_argument("--manifests", default="synthbuster,coco,openfake_test,openfake_reddit")
     ap.add_argument("--num-workers", type=int, default=12)
     args = ap.parse_args()
 
@@ -61,7 +62,7 @@ def main():
     ])
 
     items = []
-    for n in ("synthbuster", "coco", "openfake_test", "openfake_reddit"):
+    for n in args.manifests.split(","):
         with open(f"{DATA}/manifests/{n}.csv") as f:
             items += list(csv.DictReader(f))
     print(f"eval set: {len(items)}")
