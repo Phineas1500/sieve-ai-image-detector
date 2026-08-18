@@ -25,3 +25,11 @@
 img.aid-blurred {
   filter: blur(18px) saturate(0.6) !important;
 }
+
+img.aid-hidden {
+  display: none !important;
+}
+
+.aid-badge.aid-quiet {
+  display: none !important;
+}

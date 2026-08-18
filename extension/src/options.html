@@ -13,7 +13,29 @@
   <body>
     <h1>Sieve Options</h1>
     <div class="row"><label for="enabled">Enable detection</label><input type="checkbox" id="enabled" /></div>
-    <div class="row"><label for="blur">Blur images flagged as AI</label><input type="checkbox" id="blur" /></div>
+    <div class="row">
+      <label for="scanMode">Scanning</label>
+      <select id="scanMode">
+        <option value="auto">Automatic (scan as you browse)</option>
+        <option value="manual">Manual only (right-click an image)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="flaggedAction">When an image is flagged as AI</label>
+      <select id="flaggedAction">
+        <option value="badge">Badge only</option>
+        <option value="blur">Blur it (click badge to reveal)</option>
+        <option value="hide">Hide it entirely (slopblocker)</option>
+      </select>
+    </div>
+    <p class="hint">Hide mode removes flagged images without a trace — including the ~1 in 25 real images the model gets wrong. Blur keeps mistakes visible and reversible.</p>
+    <div class="row">
+      <label for="badgeDisplay">Badges</label>
+      <select id="badgeDisplay">
+        <option value="all">Show on every analyzed image</option>
+        <option value="flags">Show only on flagged images</option>
+      </select>
+    </div>
     <div class="row">
       <label for="threshold">Confidence threshold: <b id="thval"></b></label>
       <input type="range" id="threshold" min="0.5" max="0.95" step="0.01" />

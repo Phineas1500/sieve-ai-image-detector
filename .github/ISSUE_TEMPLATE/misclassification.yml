@@ -1,0 +1,48 @@
+name: Report a misclassification
+description: An image Sieve got wrong — false positive (real flagged as AI) or false negative (AI not flagged). Reports help train the next model.
+title: "[misclassification] "
+labels: ["misclassification"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Sieve! **Please attach the image file itself below**
+        (drag & drop) — image URLs from CDNs often expire before we can use them.
+        Everything you submit here is public; only include what you're comfortable sharing.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of mistake?
+      options:
+        - "False negative — AI image that Sieve did not flag"
+        - "False positive — real image that Sieve flagged as AI"
+        - "Not sure"
+    validations:
+      required: true
+  - type: input
+    id: image-url
+    attributes:
+      label: Image URL
+      description: Auto-filled if you reported via right-click. May expire — attaching the file below is more useful.
+    validations:
+      required: false
+  - type: input
+    id: sieve-verdict
+    attributes:
+      label: Sieve's verdict
+      description: The score Sieve showed (auto-filled if reported via right-click).
+    validations:
+      required: false
+  - type: input
+    id: model-version
+    attributes:
+      label: Extension version
+    validations:
+      required: false
+  - type: textarea
+    id: evidence
+    attributes:
+      label: How do you know the true label?
+      description: e.g. "poster credits the artist", "I generated it myself", "camera EXIF intact". Attach the image file here.
+    validations:
+      required: true

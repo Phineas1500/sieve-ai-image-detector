@@ -4,7 +4,12 @@
   const MIN_SIZE = 64; // skip icons
   const seen = new WeakSet();
   const badges = new Map(); // img -> {badge, score}
-  let settings = { enabled: true, threshold: 0.65, blur: true, minSize: 96, minDisplaySize: 100 };
+  let settings = {
+    enabled: true, threshold: 0.65, blur: true, minSize: 96, minDisplaySize: 100,
+    scanMode: "auto",        // "auto" | "manual" (right-click only)
+    badgeDisplay: "all",     // "all" | "flags"  (hide sub-threshold badges)
+    flaggedAction: "blur",   // "badge" | "blur" | "hide" (slopblocker)
+  };
   let flaggedCount = 0;
   let analyzedCount = 0;
 
@@ -120,12 +125,15 @@
     st.badge.textContent = isAI ? `AI ${pct}%` : isUnsure ? `unsure ${pct}%` : `${pct}%`;
     st.badge.classList.toggle("aid-flagged", isAI);
     st.badge.classList.toggle("aid-unsure", isUnsure);
+    st.badge.classList.toggle("aid-quiet", !isAI && settings.badgeDisplay === "flags");
     st.badge.title = isAI
       ? `Likely AI-generated (confidence ${pct}%). Click to toggle blur.`
       : isUnsure
         ? `Uncertain — AI confidence ${pct}%, below the ${Math.round(thr * 100)}% flag threshold`
         : `Likely real (AI confidence ${pct}%)`;
-    img.classList.toggle("aid-blurred", isAI && settings.blur);
+    const act = settings.flaggedAction || (settings.blur ? "blur" : "badge");
+    img.classList.toggle("aid-blurred", isAI && act === "blur");
+    img.classList.toggle("aid-hidden", isAI && act === "hide");
     positionBadge(img, st.badge);
   }
 
@@ -171,30 +179,10 @@
     root.querySelectorAll?.("img").forEach((img) => io.observe(img));
   }
 
-  function init() {
-    if (!settings.enabled) return;
-    observeAll(document);
-
-    const mo = new MutationObserver((muts) => {
-      for (const m of muts) {
-        if (m.type === "attributes" && m.target.tagName === "IMG") {
-          seen.delete(m.target);
-          io.observe(m.target);
-        }
-        for (const n of m.addedNodes) {
-          if (n.nodeType !== 1) continue;
-          if (n.tagName === "IMG") io.observe(n);
-          else observeAll(n);
-        }
-      }
-    });
-    mo.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["src", "srcset"],
-    });
-
+  let repositionStarted = false;
+  function startRepositionLoop() {
+    if (repositionStarted) return;
+    repositionStarted = true;
     let ticking = false;
     const reposition = () => {
       if (ticking) return;
@@ -218,5 +206,32 @@
     window.addEventListener("scroll", reposition, { passive: true });
     window.addEventListener("resize", reposition, { passive: true });
     setInterval(reposition, 1500); // catch layout shifts
+  }
+
+  function init() {
+    if (!settings.enabled) return;
+    startRepositionLoop(); // badges need positioning in every mode (incl. right-click results)
+    if (settings.scanMode === "manual") return; // no auto-scan; right-click checks still work
+    observeAll(document);
+
+    const mo = new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.type === "attributes" && m.target.tagName === "IMG") {
+          seen.delete(m.target);
+          io.observe(m.target);
+        }
+        for (const n of m.addedNodes) {
+          if (n.nodeType !== 1) continue;
+          if (n.tagName === "IMG") io.observe(n);
+          else observeAll(n);
+        }
+      }
+    });
+    mo.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["src", "srcset"],
+    });
   }
 })();

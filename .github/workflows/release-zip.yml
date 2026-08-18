@@ -1,0 +1,29 @@
+name: Attach extension zip to release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build extension
+        working-directory: extension
+        run: |
+          npm ci
+          npm run build
+          npm test
+      - name: Zip
+        run: |
+          cd extension
+          zip -r ../sieve-extension-${{ github.event.release.tag_name }}.zip . \
+            -x "node_modules/*" -x "test/*" -x "package-lock.json" -x "build.mjs"
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" sieve-extension-${{ github.event.release.tag_name }}.zip --clobber

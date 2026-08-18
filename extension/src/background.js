@@ -83,6 +83,11 @@ chrome.runtime.onInstalled.addListener(async (details) => {
       title: "Sieve: check this image",
       contexts: ["image"],
     });
+    chrome.contextMenus.create({
+      id: "aid-report",
+      title: "Sieve: report misclassification…",
+      contexts: ["image"],
+    });
   });
   if (details.reason === "install") {
     chrome.tabs.create({ url: chrome.runtime.getURL("src/setup.html") });
@@ -92,5 +97,21 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "aid-check-image" && tab?.id && info.srcUrl) {
     chrome.tabs.sendMessage(tab.id, { kind: "aid:check-image", srcUrl: info.srcUrl });
+  }
+  if (info.menuItemId === "aid-report" && info.srcUrl) {
+    // Privacy by construction: reporting opens a public GitHub issue form the
+    // user can read and edit BEFORE submitting. The extension itself sends
+    // nothing anywhere.
+    const cached = cache.get(info.srcUrl);
+    const params = new URLSearchParams({
+      template: "misclassification.yml",
+      title: "[misclassification] ",
+      "image-url": info.srcUrl,
+      "sieve-verdict": cached ? `score ${(cached.score * 100).toFixed(1)}%${cached.tta ? " (TTA)" : ""}` : "not analyzed / unknown",
+      "model-version": chrome.runtime.getManifest().version,
+    });
+    chrome.tabs.create({
+      url: `https://github.com/Phineas1500/sieve-ai-image-detector/issues/new?${params}`,
+    });
   }
 });
