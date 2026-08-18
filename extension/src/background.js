@@ -107,6 +107,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
+// The model in OPFS may predate the manifest bundled with this build:
+// extension updates ship a new pinned model URL, but the download itself
+// stays user-initiated (setup page), so detect the mismatch and prompt.
+async function modelOutdated() {
+  try {
+    const bundled = await (await fetch(chrome.runtime.getURL("model_manifest.json"))).json();
+    const root = await navigator.storage.getDirectory();
+    const fh = await root.getFileHandle("model_meta.json");
+    const meta = JSON.parse(await (await fh.getFile()).text());
+    return !!bundled.version && meta.version !== bundled.version;
+  } catch {
+    return false; // nothing stored yet — the install flow covers that
+  }
+}
+globalThis.__aidModelOutdated = modelOutdated; // e2e hook
+
 chrome.runtime.onInstalled.addListener(async (details) => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
@@ -122,6 +138,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   });
   if (details.reason === "install") {
     chrome.tabs.create({ url: chrome.runtime.getURL("src/setup.html") });
+  } else if (details.reason === "update" && (await modelOutdated())) {
+    chrome.tabs.create({ url: chrome.runtime.getURL("src/setup.html?update=1") });
   }
 });
 

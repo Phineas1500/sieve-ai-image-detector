@@ -19,8 +19,14 @@ $("threshold").addEventListener("input", (e) => {
 $("setup").addEventListener("click", () => chrome.tabs.create({ url: chrome.runtime.getURL("src/setup.html") }));
 $("options").addEventListener("click", () => chrome.runtime.openOptionsPage());
 
-chrome.runtime.sendMessage({ kind: "aid:model-status" }, (st) => {
+chrome.runtime.sendMessage({ kind: "aid:model-status" }, async (st) => {
   $("ep").textContent = st && st.ready ? `ready (${st.ep})` : "not set up";
+  try {
+    const manifest = await (await fetch(chrome.runtime.getURL("model_manifest.json"))).json();
+    if (st && st.ready && manifest.version && st.version !== manifest.version) {
+      $("ep").textContent = "model update available — open Model setup";
+    }
+  } catch {}
 });
 
 chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {

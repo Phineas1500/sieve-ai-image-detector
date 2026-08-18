@@ -73,6 +73,21 @@ btn.addEventListener("click", async () => {
   }
 });
 
+// When a stored model predates this build's pinned one, say so — detection
+// keeps running on the old model until the user downloads the new one.
+(async () => {
+  try {
+    const manifest = await loadManifest();
+    const root = await navigator.storage.getDirectory();
+    const fh = await root.getFileHandle("model_meta.json");
+    const meta = JSON.parse(await (await fh.getFile()).text());
+    if (manifest.version && meta.version !== manifest.version) {
+      statusEl.textContent = `Model update ready: ${meta.version} → ${manifest.version}. ` +
+        "Press Download model to switch; Sieve keeps using the old model until then.";
+    }
+  } catch {}
+})();
+
 document.getElementById("localfile").addEventListener("change", async (e) => {
   const f = e.target.files[0];
   if (!f) return;
