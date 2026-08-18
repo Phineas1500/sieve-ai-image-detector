@@ -3,9 +3,34 @@
 
 const OFFSCREEN_URL = "src/offscreen.html";
 
-const cache = new Map(); // url -> {score, ms}
+const cache = new Map(); // url -> {score, ms, tta}
 const CACHE_MAX = 3000;
 const inflight = new Map(); // url -> Promise
+
+// The in-memory cache dies with every MV3 service-worker restart; mirror it in
+// session storage (survives restarts, cleared when the browser closes) so
+// features like report-prefill still know recent verdicts.
+chrome.storage.session.get("aidCache").then((d) => {
+  for (const [k, v] of d.aidCache || []) if (!cache.has(k)) cache.set(k, v);
+}).catch(() => {});
+let persistTimer = null;
+function schedulePersist() {
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    chrome.storage.session.set({ aidCache: [...cache.entries()].slice(-1000) }).catch(() => {});
+  }, 2000);
+}
+
+// Report-path lookup: exact URL, else same asset ignoring the query string
+// (CDNs serve size variants like twitter's ?name=small/large).
+function cacheLookup(url) {
+  if (cache.has(url)) return cache.get(url);
+  const base = url.split("?")[0];
+  for (const [k, v] of cache) {
+    if (k.split("?")[0] === base) return v;
+  }
+  return null;
+}
 
 let offscreenReady = null;
 
@@ -31,6 +56,7 @@ function cachePut(url, result) {
     cache.delete(first);
   }
   cache.set(url, result);
+  schedulePersist();
 }
 
 async function analyze(url) {
@@ -107,21 +133,24 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     // Privacy by construction: reporting opens a public GitHub issue form the
     // user can read and edit BEFORE submitting. The extension itself sends
     // nothing anywhere.
-    const cached = cache.get(info.srcUrl);
+    const cached = cacheLookup(info.srcUrl);
     const said = !cached ? "Not analyzed"
       : cached.score >= 0.65 ? "Flagged as AI (red badge, ≥65%)"
       : cached.score >= 0.5 ? "Unsure (amber badge, 50–65%)"
       : "Low score (gray badge, <50%)";
-    const params = new URLSearchParams({
+    // GitHub's issue-form prefill wants %20 for spaces; URLSearchParams' "+"
+    // breaks dropdown option matching. Encode manually.
+    const fields = {
       template: "misclassification.yml",
       title: "[misclassification] ",
       "image-url": info.srcUrl,
       "sieve-said": said,
       "sieve-verdict": cached ? `score ${(cached.score * 100).toFixed(1)}%${cached.tta ? " (TTA)" : ""}` : "not analyzed / unknown",
       "model-version": chrome.runtime.getManifest().version,
-    });
+    };
+    const q = Object.entries(fields).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
     chrome.tabs.create({
-      url: `https://github.com/Phineas1500/sieve-ai-image-detector/issues/new?${params}`,
+      url: `https://github.com/Phineas1500/sieve-ai-image-detector/issues/new?${q}`,
     });
   }
 });
