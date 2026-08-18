@@ -16,9 +16,9 @@ COCO val2017 + OpenFake reals. Scored at the fixed **0.65** confidence threshold
 
 | condition | balanced accuracy | AI recall | real-photo accuracy |
 |---|---|---|---|
-| clean | **91.3%** | 85.6% | 97.1% |
-| web (≤768px, JPEG q60) | **87.3%** | 78.8% | 95.7% |
-| hard (≤512px, JPEG q40) | **84.6%** | 74.1% | 95.0% |
+| clean | **91.3%** | 85.9% | 96.7% |
+| web (≤768px, JPEG q60) | **87.6%** | 79.6% | 95.7% |
+| hard (≤512px, JPEG q40) | **85.8%** | 76.5% | 95.0% |
 
 For reference, the stock Community Forensics base model scores 75.8 / 65.9 / 56.5
 under the same protocol (its detection rate on GPT Image 2 is 7%; ours is >90%).

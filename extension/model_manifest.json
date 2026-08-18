@@ -1,12 +1,12 @@
 {
-  "version": "ft3-2026-08-18",
-  "model_url": "https://github.com/Phineas1500/sieve-ai-image-detector/releases/download/v0.6.0/ft3_best_fp16.onnx",
-  "sha256": "dd31449f34f796e7697caeccfe35c51d8760a69701dbcb65fa81fbc0032c03fa",
+  "version": "ft4-2026-08-18",
+  "model_url": "https://github.com/Phineas1500/sieve-ai-image-detector/releases/download/v0.7.0/ft4_best_fp16.onnx",
+  "sha256": "7974b4cbe5fe9d6ff2cc366d2423712455279133046453250231d26cb094f115",
   "input_size": 384,
   "resize_shorter_side": 440,
   "norm_mean": [0.485, 0.456, 0.406],
   "norm_std": [0.229, 0.224, 0.225],
-  "calibration": { "type": "sigmoid", "temperature": 1.0, "bias": 0.52 },
+  "calibration": { "type": "sigmoid", "temperature": 1.0, "bias": 0.63 },
   "tta": { "enabled": true, "band_lo": 0.25, "band_hi": 0.85, "min_side": 384 },
   "notes": "model_url is pinned at build time; the extension never downloads anything after initial setup. Calibration places the 0.65 confidence threshold at the operating point maximizing worst-case balanced accuracy across clean/web/hard degradation on the held-out proxy benchmark, constrained to keep real-photo accuracy >= 95%."
 }
