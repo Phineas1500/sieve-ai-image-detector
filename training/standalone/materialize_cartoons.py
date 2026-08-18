@@ -59,6 +59,17 @@ SOURCES = [
      "stride": 1, "train": 2400, "heldout": 250},
     {"prefix": "render", "repo": "tyhuang/ShapeNet_Rendering", "config": "default",
      "stride": 12, "train": 4000, "heldout": 400},
+    # ft4.3: properly-sized modern-generator positives in the cartoon style
+    # space (diffusiondb's partial config only yielded ~1.2k). MJ v6 prompt-
+    # filtered, plus Niji (MJ's anime/cartoon model) where every image is
+    # flat-cartoon AI by construction.
+    {"prefix": "mjc", "repo": "brivangl/midjourney-v6-llava", "config": "default",
+     "stride": 1, "train": 5000, "heldout": 500, "text_col": "prompt",
+     "text_re": r"cartoon|illustrat|sticker|mascot|chibi|pixar|disney|anime|comic|vector art|flat design|emoji|cel[- ]?shad|clip ?art|character design|kawaii|doodle"},
+    {"prefix": "niji", "repo": "Korakoe/NijiJourney-Prompt-Pairs", "config": "default",
+     "stride": 1, "train": 3400, "heldout": 350},
+    {"prefix": "niji2", "repo": "p1atdev/nijijourney", "config": "default",
+     "stride": 1, "train": 1650, "heldout": 180},
 ]
 
 # prefix -> (label, source) for manifest rows
@@ -76,6 +87,9 @@ TAXONOMY = {
     "wallp": (0, "anime_wallpaper"),
     "emoji": (0, "emoji_vector"),
     "render": (0, "cgi_render"),
+    "mjc": (1, "ai_cartoon_mj6"),
+    "niji": (1, "ai_niji"),
+    "niji2": (1, "ai_niji"),
 }
 
 
@@ -132,11 +146,14 @@ def ingest(spec):
         os.remove(local)
         print(f"  {spec['prefix']}: {fpath} done ({len(written)}/{total_cap})")
     shutil.rmtree(cache, ignore_errors=True)
-    for p in written[-spec["heldout"]:]:
-        shutil.move(p, f"{DATA}/cartoons/heldout/{os.path.basename(p)}")
+    # a source that under-fills (exhausted or filter-limited) must not end up
+    # mostly-heldout: cap the tail split at 20% of what was actually collected
+    ho = min(spec["heldout"], len(written) // 5)
+    if ho:
+        for p in written[-ho:]:
+            shutil.move(p, f"{DATA}/cartoons/heldout/{os.path.basename(p)}")
     open(marker, "w").close()
-    print(f"{spec['prefix']}: {len(written) - spec['heldout']} train / "
-          f"{min(spec['heldout'], len(written))} heldout")
+    print(f"{spec['prefix']}: {len(written) - ho} train / {ho} heldout")
 
 
 def manifests():
