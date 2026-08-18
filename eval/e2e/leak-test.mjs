@@ -124,6 +124,48 @@ try {
   await new Promise((r) => setTimeout(r, 3500));
   const afterChurn = await page.evaluate(() => document.querySelectorAll(".aid-badge").length);
   check("no badge accumulation after churn", afterChurn === files.length - 2, `${afterChurn} badges remain`);
+
+  // stacked-animation case (etched.com): several imgs layered in one slot,
+  // all but one inside opacity:0 wrappers — only the revealed frame may show
+  // a badge, and a frame swap moves the badge, never multiplies it
+  await page.evaluate((src) => {
+    const stack = document.createElement("div");
+    stack.id = "stack";
+    stack.style.cssText = "position:relative;width:320px;height:220px;margin:24px";
+    for (let k = 0; k < 3; k++) {
+      const wrap = document.createElement("div");
+      wrap.id = `wrap${k}`;
+      wrap.style.cssText = `position:absolute;inset:0;opacity:${k === 0 ? 1 : 0}`;
+      const img = document.createElement("img");
+      img.src = src;
+      img.style.cssText = "width:300px;height:200px";
+      wrap.appendChild(img);
+      stack.appendChild(wrap);
+    }
+    document.body.appendChild(stack);
+    stack.scrollIntoView({ block: "center" });
+  }, await page.evaluate(() => document.querySelector("img").src));
+  await page.waitForFunction(
+    () => [...document.getElementById("stack").querySelectorAll("img")].every((im) => im.dataset.aidScore),
+    { timeout: 60000, polling: 500 }
+  );
+  await new Promise((r) => setTimeout(r, 2500)); // let the sweep settle visibility
+  const visibleInStack = () => page.evaluate(() => {
+    const s = document.getElementById("stack").getBoundingClientRect();
+    return [...document.querySelectorAll(".aid-badge")].filter((b) => {
+      if (b.style.display === "none") return false;
+      const r = b.getBoundingClientRect();
+      return r.left >= s.left - 4 && r.left <= s.right && r.top >= s.top - 4 && r.top <= s.bottom;
+    }).length;
+  });
+  check("hidden stack frames unbadged", (await visibleInStack()) === 1, `${await visibleInStack()} visible badges for 3 stacked imgs`);
+
+  await page.evaluate(() => {
+    document.getElementById("wrap0").style.opacity = "0";
+    document.getElementById("wrap1").style.opacity = "1";
+  });
+  await new Promise((r) => setTimeout(r, 2500));
+  check("frame swap moves badge, no pileup", (await visibleInStack()) === 1, `${await visibleInStack()} visible after swap`);
 } finally {
   await browser.close();
   server.close();

@@ -91,7 +91,13 @@
       r.width === 0 || r.height === 0 ||
       r.bottom < 0 || r.top > window.innerHeight ||
       r.right < 0 || r.left > window.innerWidth;
-    if (offscreen || coveredByStickyBar(img, r.left + 12, r.top + 12)) {
+    // Pages animate image stacks via opacity/visibility (crossfades,
+    // scroll-driven zooms) — a laid-out but effectively invisible img must
+    // not show a badge, or every frame of the stack badges at once.
+    const invisible = typeof img.checkVisibility === "function" &&
+      !img.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true,
+                             opacityProperty: true, visibilityProperty: true });
+    if (offscreen || invisible || coveredByStickyBar(img, r.left + 12, r.top + 12)) {
       badge.style.display = "none";
       return;
     }
