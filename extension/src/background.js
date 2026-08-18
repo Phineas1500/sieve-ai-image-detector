@@ -108,10 +108,15 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     // user can read and edit BEFORE submitting. The extension itself sends
     // nothing anywhere.
     const cached = cache.get(info.srcUrl);
+    const said = !cached ? "Not analyzed"
+      : cached.score >= 0.65 ? "Flagged as AI (red badge, ≥65%)"
+      : cached.score >= 0.5 ? "Unsure (amber badge, 50–65%)"
+      : "Low score (gray badge, <50%)";
     const params = new URLSearchParams({
       template: "misclassification.yml",
       title: "[misclassification] ",
       "image-url": info.srcUrl,
+      "sieve-said": said,
       "sieve-verdict": cached ? `score ${(cached.score * 100).toFixed(1)}%${cached.tta ? " (TTA)" : ""}` : "not analyzed / unknown",
       "model-version": chrome.runtime.getManifest().version,
     });

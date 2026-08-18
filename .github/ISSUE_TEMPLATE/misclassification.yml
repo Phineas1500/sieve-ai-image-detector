@@ -10,13 +10,25 @@ body:
         (drag & drop) — image URLs from CDNs often expire before we can use them.
         Everything you submit here is public; only include what you're comfortable sharing.
   - type: dropdown
-    id: kind
+    id: sieve-said
     attributes:
-      label: What kind of mistake?
+      label: What did Sieve say?
+      description: Auto-filled if you reported via right-click.
       options:
-        - "False negative — AI image that Sieve did not flag"
-        - "False positive — real image that Sieve flagged as AI"
-        - "Not sure"
+        - "Flagged as AI (red badge, ≥65%)"
+        - "Unsure (amber badge, 50–65%)"
+        - "Low score (gray badge, <50%)"
+        - "Not analyzed"
+    validations:
+      required: true
+  - type: dropdown
+    id: actually
+    attributes:
+      label: What is the image actually?
+      options:
+        - "AI-generated"
+        - "Real / human-made"
+        - "Not certain"
     validations:
       required: true
   - type: input
