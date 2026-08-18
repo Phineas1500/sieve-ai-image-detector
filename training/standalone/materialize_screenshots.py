@@ -84,7 +84,8 @@ def synth(url):
         t.extractall(tmp, filter="data")
     imgs = []
     for root, _, files in os.walk(tmp):
-        imgs += [os.path.join(root, f) for f in files if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+        imgs += [os.path.join(root, f) for f in files
+                 if f.lower().endswith((".png", ".jpg", ".jpeg")) and not f.startswith("._")]
     random.Random(0).shuffle(imgs)
     os.makedirs(f"{DATA}/screenshots/train", exist_ok=True)
     os.makedirs(f"{DATA}/screenshots/heldout", exist_ok=True)

@@ -38,12 +38,12 @@ def _degrade(pil_img, view):
     return Image.open(buf).convert("RGB")
 
 
-def _train_augment(pil_img, rng, input_size, resize_size):
+def _train_augment(pil_img, rng, input_size, resize_size, thumb_p=0.25):
     from PIL import Image
 
     interps = [Image.NEAREST, Image.BILINEAR, Image.BICUBIC, Image.LANCZOS]
     # thumbnail regime (new in ft2): hard downscale like search-result thumbs
-    if rng.random() < 0.25:
+    if rng.random() < thumb_p:
         w, h = pil_img.size
         t = rng.randint(180, 320)
         if min(w, h) > t:
@@ -84,6 +84,7 @@ def main():
     ap.add_argument("--max-steps", type=int, default=4500)
     ap.add_argument("--val-every", type=int, default=750)
     ap.add_argument("--val-cap", type=int, default=6000)
+    ap.add_argument("--thumb-p", type=float, default=0.25)
     ap.add_argument("--num-workers", type=int, default=12)
     args = ap.parse_args()
 
@@ -127,7 +128,7 @@ def main():
             rng = pyrandom.Random((hash(it["path"]) ^ pyrandom.getrandbits(32)) & 0xFFFFFFFF)
             try:
                 img = Image.open(it["path"]).convert("RGB")
-                img = _train_augment(img, rng, C, resize_size)
+                img = _train_augment(img, rng, C, resize_size, args.thumb_p)
                 return norm(transforms.functional.to_tensor(img)), float(it["label"])
             except Exception:
                 return torch.zeros(3, C, C), -1.0
