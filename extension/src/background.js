@@ -134,18 +134,19 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     // user can read and edit BEFORE submitting. The extension itself sends
     // nothing anywhere.
     const cached = cacheLookup(info.srcUrl);
-    const said = !cached ? "Not analyzed"
-      : cached.score >= 0.65 ? "Flagged as AI (red badge, ≥65%)"
-      : cached.score >= 0.5 ? "Unsure (amber badge, 50–65%)"
-      : "Low score (gray badge, <50%)";
-    // GitHub's issue-form prefill wants %20 for spaces; URLSearchParams' "+"
-    // breaks dropdown option matching. Encode manually.
+    // GitHub issue forms only prefill input/textarea fields (not dropdowns),
+    // and want %20 rather than "+" for spaces — encode manually.
+    const band = !cached ? "not analyzed"
+      : cached.score >= 0.65 ? "flagged as AI"
+      : cached.score >= 0.5 ? "unsure"
+      : "low score";
     const fields = {
       template: "misclassification.yml",
       title: "[misclassification] ",
       "image-url": info.srcUrl,
-      "sieve-said": said,
-      "sieve-verdict": cached ? `score ${(cached.score * 100).toFixed(1)}%${cached.tta ? " (TTA)" : ""}` : "not analyzed / unknown",
+      "sieve-verdict": cached
+        ? `${band} — score ${(cached.score * 100).toFixed(1)}%${cached.tta ? " (TTA)" : ""}`
+        : "not analyzed",
       "model-version": chrome.runtime.getManifest().version,
     };
     const q = Object.entries(fields).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
