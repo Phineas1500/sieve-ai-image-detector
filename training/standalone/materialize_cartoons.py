@@ -32,6 +32,19 @@ SOURCES = [
      "stride": 8, "train": 3000, "heldout": 300},
     {"prefix": "pxai", "repo": "jainr3/diffusiondb-pixelart", "config": "2k_all",
      "stride": 1, "train": 1800, "heldout": 200},
+    # ft4.1: modern flat-TV-cartoon style (South Park / Club Penguin reports
+    # survived ft4 — cel film, procedural avatars, and game thumbnails don't
+    # span crisp-outline flat digital 2D; these frames do)
+    {"prefix": "sp", "repo": "CasperLD/south_park_cartoons_with_blip_captions_512",
+     "config": "default", "stride": 2, "train": 5000, "heldout": 500},
+    {"prefix": "fg", "repo": "CasperLD/family_guy_cartoons_with_blip_captions_512",
+     "config": "default", "stride": 4, "train": 4000, "heldout": 400},
+    {"prefix": "at", "repo": "CasperLD/adventure_time_cartoons_with_blip_captions_512",
+     "config": "default", "stride": 4, "train": 3000, "heldout": 300},
+    {"prefix": "av", "repo": "lumenggan/avatar-the-last-airbender",
+     "config": "default", "stride": 6, "train": 2000, "heldout": 200},
+    {"prefix": "spc", "repo": "leffff/south-park-character-png-dataset",
+     "config": "default", "stride": 1, "train": 860, "heldout": 90},
 ]
 
 # prefix -> (label, source) for manifest rows
@@ -40,6 +53,11 @@ TAXONOMY = {
     "tj": (0, "cartoon_frame"),
     "cset": (0, "cartoon_vector"),
     "pxai": (1, "ai_pixelart"),
+    "sp": (0, "cartoon_southpark"),
+    "fg": (0, "cartoon_familyguy"),
+    "at": (0, "cartoon_adventuretime"),
+    "av": (0, "cartoon_avatar"),
+    "spc": (0, "cartoon_charart"),
 }
 
 
