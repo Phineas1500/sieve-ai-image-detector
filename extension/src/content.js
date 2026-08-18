@@ -93,10 +93,14 @@
       r.right < 0 || r.left > window.innerWidth;
     // Pages animate image stacks via opacity/visibility (crossfades,
     // scroll-driven zooms) — a laid-out but effectively invisible img must
-    // not show a badge, or every frame of the stack badges at once.
-    const invisible = typeof img.checkVisibility === "function" &&
-      !img.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true,
-                             opacityProperty: true, visibilityProperty: true });
+    // not show a badge, or every frame of the stack badges at once. Check the
+    // PARENT's visibility, not the img's own: X/Twitter keeps the real <img>
+    // at opacity:0 over a background-image twin that shows the pixels, so the
+    // img's own opacity says nothing about what the user sees.
+    const anchor = img.parentElement || img;
+    const invisible = typeof anchor.checkVisibility === "function" &&
+      !anchor.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true,
+                                opacityProperty: true, visibilityProperty: true });
     if (offscreen || invisible || coveredByStickyBar(img, r.left + 12, r.top + 12)) {
       badge.style.display = "none";
       return;

@@ -166,6 +166,37 @@ try {
   });
   await new Promise((r) => setTimeout(r, 2500));
   check("frame swap moves badge, no pileup", (await visibleInStack()) === 1, `${await visibleInStack()} visible after swap`);
+
+  // X/Twitter pattern: the real <img> sits at opacity:0 over a sibling div
+  // that paints the same picture via background-image — the badge must show
+  // (the parent is visible; only the img's own opacity is zero)
+  await page.evaluate((src) => {
+    const holder = document.createElement("div");
+    holder.id = "tw";
+    holder.style.cssText = "position:relative;width:320px;height:220px;margin:24px";
+    const bg = document.createElement("div");
+    bg.style.cssText = `position:absolute;inset:0;background-image:url(${JSON.stringify(src)});background-size:cover`;
+    const img = document.createElement("img");
+    img.src = src;
+    img.style.cssText = "position:absolute;inset:0;width:300px;height:200px;opacity:0";
+    holder.append(bg, img);
+    document.body.appendChild(holder);
+    holder.scrollIntoView({ block: "center" });
+  }, await page.evaluate(() => document.querySelector("img").src));
+  await page.waitForFunction(
+    () => document.querySelector("#tw img")?.dataset.aidScore,
+    { timeout: 60000, polling: 500 }
+  );
+  await new Promise((r) => setTimeout(r, 2500));
+  const twVisible = await page.evaluate(() => {
+    const s = document.getElementById("tw").getBoundingClientRect();
+    return [...document.querySelectorAll(".aid-badge")].filter((b) => {
+      if (b.style.display === "none") return false;
+      const r = b.getBoundingClientRect();
+      return r.left >= s.left - 4 && r.left <= s.right && r.top >= s.top - 4 && r.top <= s.bottom;
+    }).length;
+  });
+  check("opacity-0 img over bg-image twin still badged (X pattern)", twVisible === 1, `${twVisible} visible badges`);
 } finally {
   await browser.close();
   server.close();
