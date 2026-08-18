@@ -55,6 +55,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     analyze(msg.url).then(sendResponse);
     return true; // async
   }
+  if (msg?.kind === "aid:get-settings") {
+    // offscreen documents lack chrome.storage; serve settings from here
+    chrome.storage.sync.get({ forceWasm: false }, sendResponse);
+    return true;
+  }
   if (msg?.kind === "aid:model-status") {
     (async () => {
       await ensureOffscreen();

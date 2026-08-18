@@ -120,6 +120,23 @@ try {
     `${badgeAudit.quiet}/${badgeAudit.clean} quiet`);
   check("flags-only: flagged badges still shown", badgeAudit.flaggedBadges === badgeAudit.flagged,
     `${badgeAudit.flaggedBadges}/${badgeAudit.flagged}`);
+  await page.close();
+
+  // --- forced WASM: the fallback path must work from the trimmed vendor set
+  await setSettings({ forceWasm: true, badgeDisplay: "all" });
+  await setup.evaluate(() => chrome.runtime.sendMessage({ kind: "aid:reload-model" }));
+  await new Promise((r) => setTimeout(r, 3000));
+  const st = await setup.evaluate(() => chrome.runtime.sendMessage({ kind: "aid:model-status" }));
+  check("forced WASM: session initializes", !!st && st.ready === true, `ep=${st && st.ep}`);
+  check("forced WASM: uses wasm EP", !!st && st.ep === "wasm", `ep=${st && st.ep}`);
+  page = await visit();
+  await page.waitForFunction((n) => document.querySelectorAll("img[data-aid-score]").length >= n,
+    { timeout: 600000, polling: 500 }, files.length);
+  const wasmScores = await page.evaluate(() =>
+    [...document.querySelectorAll("img[data-aid-score]")].map((i) => +i.dataset.aidScore));
+  check("forced WASM: all images scored", wasmScores.length === files.length, `${wasmScores.length}/${files.length}`);
+  await setSettings({ forceWasm: false });
+  await setup.evaluate(() => chrome.runtime.sendMessage({ kind: "aid:reload-model" }));
 } finally {
   await browser.close().catch(() => {});
   server.close();

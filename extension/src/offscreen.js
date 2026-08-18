@@ -38,12 +38,21 @@ async function createSession() {
   ort.env.wasm.wasmPaths = chrome.runtime.getURL("vendor/ort/");
   ort.env.wasm.numThreads = 1; // no SharedArrayBuffer in this context
 
+  // Debug/test setting: force the WASM path (also exercised in CI so the
+  // trimmed vendor set provably serves machines without WebGPU). Offscreen
+  // documents lack chrome.storage — ask the service worker.
+  let forceWasm = false;
+  try {
+    const s = await chrome.runtime.sendMessage({ kind: "aid:get-settings" });
+    forceWasm = !!(s && s.forceWasm);
+  } catch {}
+
   // Only use WebGPU on a real hardware adapter — software (SwiftShader)
   // WebGPU is far slower than WASM SIMD.
   let hardwareGpu = false;
   try {
     const adapter = await navigator.gpu?.requestAdapter();
-    hardwareGpu = !!adapter && !adapter.isFallbackAdapter;
+    hardwareGpu = !forceWasm && !!adapter && !adapter.isFallbackAdapter;
   } catch {}
 
   try {
