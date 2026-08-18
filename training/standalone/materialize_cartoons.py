@@ -19,6 +19,7 @@ Manifests: cartoons_train.csv / cartoons_heldout.csv.
 Env: DATA, SCRATCH, HF_TOKEN as usual.
 """
 import os
+import re
 import shutil
 
 from materialize_eval import DATA, SCRATCH, _sniff_ext, _write_manifest
@@ -45,6 +46,19 @@ SOURCES = [
      "config": "default", "stride": 6, "train": 2000, "heldout": 200},
     {"prefix": "spc", "repo": "leffff/south-park-character-png-dataset",
      "config": "default", "stride": 1, "train": 860, "heldout": 90},
+    # ft4.2: (a) AI cartoon/illustration positives to recover the illustration
+    # recall ft4.1 gave back, and to teach the AI side of mascot/sticker art;
+    # (b) HD stills (fine-texture gap), gradient emoji/mascot vector reals,
+    # and CGI object renders (issue #15 category)
+    {"prefix": "aicart", "repo": "poloclub/diffusiondb", "config": "2m_random_50k",
+     "stride": 1, "train": 6000, "heldout": 600, "text_col": "prompt",
+     "text_re": r"cartoon|illustrat|sticker|mascot|chibi|pixar|disney|anime|comic|vector art|flat design|emoji|cel[- ]?shad|clip ?art|character design"},
+    {"prefix": "wallp", "repo": "puruchinera/anime_wallpapers", "config": "default",
+     "stride": 3, "train": 4000, "heldout": 400},
+    {"prefix": "emoji", "repo": "valhalla/emoji-dataset", "config": "default",
+     "stride": 1, "train": 2400, "heldout": 250},
+    {"prefix": "render", "repo": "tyhuang/ShapeNet_Rendering", "config": "default",
+     "stride": 12, "train": 4000, "heldout": 400},
 ]
 
 # prefix -> (label, source) for manifest rows
@@ -58,6 +72,10 @@ TAXONOMY = {
     "at": (0, "cartoon_adventuretime"),
     "av": (0, "cartoon_avatar"),
     "spc": (0, "cartoon_charart"),
+    "aicart": (1, "ai_cartoon"),
+    "wallp": (0, "anime_wallpaper"),
+    "emoji": (0, "emoji_vector"),
+    "render": (0, "cgi_render"),
 }
 
 
@@ -89,16 +107,22 @@ def ingest(spec):
         local = hf_hub_download(spec["repo"], fpath, repo_type="dataset",
                                 revision="refs/convert/parquet", token=token, local_dir=cache)
         pf = pq.ParquetFile(local)
-        col_name = "image" if "image" in pf.schema_arrow.names else "img_bytes"
-        for batch in pf.iter_batches(batch_size=32, columns=[col_name]):
+        names = pf.schema_arrow.names
+        col_name = next(c for c in ("image", "img_bytes", "png") if c in names)
+        cols = [col_name] + ([spec["text_col"]] if spec.get("text_col") else [])
+        text_re = re.compile(spec["text_re"], re.I) if spec.get("text_re") else None
+        for batch in pf.iter_batches(batch_size=32, columns=cols):
             col = batch.column(0)
+            txt = batch.column(1) if text_re else None
             for i in range(len(col)):
                 if len(written) >= total_cap:
                     break
+                if text_re and not text_re.search(txt[i].as_py() or ""):
+                    continue
                 seen += 1
                 if (seen - 1) % spec["stride"]:
                     continue
-                b = col[i]["bytes"].as_py() if col_name == "image" else col[i].as_py()
+                b = col[i].as_py() if col_name == "img_bytes" else col[i]["bytes"].as_py()
                 if b is None:
                     continue
                 p = f"{DATA}/cartoons/train/{spec['prefix']}_{len(written):06d}{_sniff_ext(b)}"
