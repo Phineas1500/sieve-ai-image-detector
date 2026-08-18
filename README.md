@@ -1,3 +1,5 @@
+<img src="assets/sieve.jpg" width="110" align="right" alt="Sieve logo">
+
 # Sieve — Local AI Image Detector for Chrome
 
 A Manifest V3 Chrome extension that detects AI-generated images **entirely on-device**.
