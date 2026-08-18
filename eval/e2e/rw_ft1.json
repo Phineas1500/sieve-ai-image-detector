@@ -1,0 +1,83 @@
+{
+  "gimg-mj7-art": {
+    "kind": "ai-lean",
+    "n": 0,
+    "flagged": 0,
+    "unsure": 0,
+    "ttaFired": 0,
+    "scores": []
+  },
+  "gimg-ai-art": {
+    "kind": "ai-lean",
+    "n": 0,
+    "flagged": 0,
+    "unsure": 0,
+    "ttaFired": 0,
+    "scores": []
+  },
+  "gimg-recraft": {
+    "kind": "ai-lean",
+    "n": 0,
+    "flagged": 0,
+    "unsure": 0,
+    "ttaFired": 0,
+    "scores": []
+  },
+  "gimg-posters": {
+    "kind": "real-lean",
+    "n": 0,
+    "flagged": 0,
+    "unsure": 0,
+    "ttaFired": 0,
+    "scores": []
+  },
+  "gimg-nfl": {
+    "kind": "real-lean",
+    "n": 0,
+    "flagged": 0,
+    "unsure": 0,
+    "ttaFired": 0,
+    "scores": []
+  },
+  "reddit-mj": {
+    "kind": "ai-lean",
+    "n": 1,
+    "flagged": 1,
+    "unsure": 0,
+    "ttaFired": 0,
+    "scores": [
+      0.993
+    ]
+  },
+  "reddit-pics": {
+    "kind": "real-lean",
+    "n": 1,
+    "flagged": 1,
+    "unsure": 0,
+    "ttaFired": 0,
+    "scores": [
+      0.993
+    ]
+  },
+  "wiki-potd": {
+    "kind": "real-lean",
+    "n": 12,
+    "flagged": 0,
+    "unsure": 0,
+    "ttaFired": 0,
+    "scores": [
+      0.304,
+      0.062,
+      0.03,
+      0.029,
+      0.011,
+      0.008,
+      0.003,
+      0.001,
+      0.001,
+      0.001,
+      0,
+      0
+    ]
+  }
+}
