@@ -32,7 +32,8 @@ async function restoreCacheMirror() {
       chrome.storage.session.get(["aidCache", "aidCacheVer"]),
       installedModelVersion(),
     ]);
-    if (d.aidCacheVer && ver && d.aidCacheVer !== ver) {
+    // no stamp = written by pre-0.8.2 code or unknown provenance: drop it too
+    if (!d.aidCacheVer || (ver && d.aidCacheVer !== ver)) {
       await chrome.storage.session.remove(["aidCache", "aidCacheVer"]).catch(() => {});
       return;
     }
