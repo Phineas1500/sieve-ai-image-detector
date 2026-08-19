@@ -70,6 +70,17 @@ SOURCES = [
      "stride": 1, "train": 3400, "heldout": 350},
     {"prefix": "niji2", "repo": "p1atdev/nijijourney", "config": "default",
      "stride": 1, "train": 1650, "heldout": 180},
+    # ft4.4: processed-real imagery — the dominant field FP category (issues
+    # #17-#22): designed YouTube thumbnail composites (2023 scrape, pre-AI-
+    # adoption in thumbnail design), retouched celebrity portraits (CelebA-HQ,
+    # pre-2015), and painterly AI positives to anchor the painterly boundary.
+    {"prefix": "ytt", "repo": "vargr/yt_thumbnail_dataset", "config": "default",
+     "stride": 3, "train": 8000, "heldout": 800},
+    {"prefix": "celeb", "repo": "Chris1/celebA-HQ", "config": "default",
+     "stride": 4, "train": 4000, "heldout": 400},
+    {"prefix": "aipnt", "repo": "poloclub/diffusiondb", "config": "2m_random_50k",
+     "stride": 1, "train": 5000, "heldout": 500, "text_col": "prompt",
+     "text_re": r"painting|watercolor|oil on canvas|impressionis|acrylic|gouache|artstation|concept art|fantasy art|digital painting|matte painting"},
 ]
 
 # prefix -> (label, source) for manifest rows
@@ -90,6 +101,9 @@ TAXONOMY = {
     "mjc": (1, "ai_cartoon_mj6"),
     "niji": (1, "ai_niji"),
     "niji2": (1, "ai_niji"),
+    "ytt": (0, "yt_thumbnail"),
+    "celeb": (0, "celeb_portrait"),
+    "aipnt": (1, "ai_painterly"),
 }
 
 

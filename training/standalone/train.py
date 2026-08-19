@@ -56,7 +56,11 @@ def _train_augment(pil_img, rng, input_size, resize_size, thumb_p=0.25):
     for k in range(2):
         if rng.random() < (0.85 if k == 0 else 0.3):
             buf = io.BytesIO()
-            pil_img.convert("RGB").save(buf, format="JPEG", quality=rng.randint(30, 95))
+            # modern CDNs (YouTube, Twitter) re-encode as WebP/AVIF; WebP's
+            # VP8 artifacts stand in for that family (AVIF encode is too slow
+            # for the loader). JPEG stays the dominant web codec.
+            fmt = "WEBP" if rng.random() < 0.25 else "JPEG"
+            pil_img.convert("RGB").save(buf, format=fmt, quality=rng.randint(30, 95))
             buf.seek(0)
             pil_img = Image.open(buf).convert("RGB")
     w, h = pil_img.size
