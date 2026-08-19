@@ -1,0 +1,72 @@
+{
+ "sample_images": [
+  {
+   "file": "000000573943.jpg",
+   "score": 0.03558191141612351
+  },
+  {
+   "file": "000000575500.jpg",
+   "score": 2.6822302795615985e-05
+  },
+  {
+   "file": "000000576654.jpg",
+   "score": 6.956878579306588e-05
+  },
+  {
+   "file": "000000578093.jpg",
+   "score": 0.00020285575939376943
+  },
+  {
+   "file": "000000580418.jpg",
+   "score": 3.210192366263613e-05
+  },
+  {
+   "file": "000000581781.jpg",
+   "score": 0.001207908546764344
+  },
+  {
+   "file": "fake_r1f1178cet.png",
+   "score": 0.9999653654782586
+  },
+  {
+   "file": "fake_r1f1a3258t.png",
+   "score": 0.999994028088347
+  },
+  {
+   "file": "fake_r1f2c2acft.png",
+   "score": 0.9997845357353541
+  },
+  {
+   "file": "fake_r1f4a44a7t.png",
+   "score": 0.9999588707549083
+  },
+  {
+   "file": "fake_r1f5ad4e0t.png",
+   "score": 0.9999786620064234
+  },
+  {
+   "file": "unsure_cand_448263.jpg",
+   "score": 0.8194776452272803
+  },
+  {
+   "file": "unsure_cand_566282.jpg",
+   "score": 0.5750052233168385
+  },
+  {
+   "file": "unsure_flux2_000048.jpg",
+   "score": 0.503447211004619
+  },
+  {
+   "file": "unsure_ft41_real_035.jpg",
+   "score": 0.6321610598391261
+  },
+  {
+   "file": "unsure_ft41_recraft_022.jpg",
+   "score": 0.61385768600438
+  },
+  {
+   "file": "unsure_ft41_recraft_037.jpg",
+   "score": 0.6173240559713857
+  }
+ ]
+}
