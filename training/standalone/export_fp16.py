@@ -44,12 +44,17 @@ def main():
 
     wrapped = Fp32Boundary(model).eval().cuda()
     out = os.path.expanduser(args.out)
-    torch.onnx.export(
-        wrapped, x, out,
+    kwargs = dict(
         input_names=["input"], output_names=["logit"],
         dynamic_axes={"input": {0: "batch"}, "logit": {0: "batch"}},
         opset_version=17,
     )
+    try:
+        # newer torch defaults to the dynamo exporter, which externalizes the
+        # weights into a sidecar .data file — the extension needs ONE file
+        torch.onnx.export(wrapped, x, out, dynamo=False, **kwargs)
+    except TypeError:
+        torch.onnx.export(wrapped, x, out, **kwargs)
 
     import onnxruntime as onnxrt
 
