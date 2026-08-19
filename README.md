@@ -5,7 +5,8 @@
 A Manifest V3 Chrome extension that detects AI-generated images **entirely on-device**.
 No cloud inference, no external APIs, no local server. Images never leave your browser.
 
-Built for the [poidh local-AI challenge](https://poidh.xyz/arbitrum/bounty/323). MIT licensed.
+Winner of the [poidh local-AI challenge](https://poidh.xyz/arbitrum/bounty/323). MIT licensed,
+and actively improved from user reports — see the issue tracker.
 
 ## Results
 
@@ -31,18 +32,34 @@ Inference: ~91ms/image end-to-end (WebGPU, Apple Silicon), ~30ms model time.
 - The extension service worker orchestrates a queue with caching; an offscreen
   document fetches image bytes (host permissions bypass CORS, usually a browser
   cache hit), decodes, and preprocesses them.
-- Inference runs in ONNX Runtime Web on **WebGPU**, falling back to **WASM (SIMD)**
-  on machines without WebGPU. The model is a ViT-S/16 initialized from
-  [Community Forensics](https://github.com/JeongsooP/Community-Forensics)
-  (Park & Owens, CVPR 2025, MIT) and fine-tuned on modern generator outputs
-  (GPT Image, Midjourney v7, Flux, Nano Banana, …) with heavy web-realistic
-  degradation augmentation (JPEG recompression, rescaling).
-- Every analyzed image gets a confidence badge; images at or above the
-  threshold (default **65%**) are flagged as AI and optionally blurred.
-  Click a badge to toggle the blur.
+- Preprocessing is **deterministic and browser-independent**: images decode
+  1:1 (a startup probe verifies the canvas readback byte-exactly and switches
+  to WebCodecs if the browser injects fingerprinting noise), and resizing uses
+  Sieve's own Pillow-exact resampler — so scores match the Python benchmark
+  pipeline on every browser.
+- Inference runs in ONNX Runtime Web on **WebGPU**, falling back to
+  **WASM (SIMD)** — including automatically when a numerical self-test detects
+  a GPU stack computing the model incorrectly. The model is a ViT-S/16
+  initialized from [Community Forensics](https://github.com/JeongsooP/Community-Forensics)
+  (Park & Owens, CVPR 2025, MIT), fine-tuned on modern generator outputs
+  (GPT Image, Midjourney v7, Flux, Nano Banana, …) with web-realistic
+  degradation augmentation (JPEG/WebP recompression, rescaling, thumbnail
+  regime) and hard-real categories sourced from user reports (screenshots,
+  cartoon frames, game art, YouTube thumbnail composites, retouched
+  portraits). Shipped weights are a **weight average of two identically
+  trained runs**, which stabilizes borderline scores across releases.
+- Borderline images (calibrated 25–85%) get a second, native-resolution
+  inference pass (selective TTA) and average the two views.
+- Every analyzed image gets a confidence badge: red **AI n%** at or above the
+  threshold (default **65%**, optionally blurred — click to toggle), amber
+  **unsure n%** just below it, quiet gray otherwise.
+- Wrong verdict? Right-click → *Sieve: report misclassification* pre-fills a
+  GitHub issue with the image URL and Sieve's score — reported images become
+  regression tests and training categories for the next model.
 - Model weights (~45 MB) are downloaded **once** during setup from a pinned,
-  checksummed URL and stored in OPFS. After that the extension runs fully
-  offline and never downloads anything again.
+  checksummed URL and stored in OPFS; the extension then runs fully offline.
+  When an update ships a newer pinned model, Sieve prompts — downloads are
+  always user-initiated. The popup shows exactly which weights are installed.
 
 ## Install (from source)
 
@@ -65,19 +82,29 @@ Then:
 
 ## Reproducing the model
 
-Training runs on [Modal](https://modal.com) (`training/modal_app.py`):
+The pipeline is plain PyTorch and runs on any CUDA machine
+(`training/standalone/`, no cloud service required):
 
 ```bash
-pip install modal
-modal run training/modal_app.py::download_all   # eval + training datasets
-modal run training/modal_app.py::run_eval       # zero-shot baseline
-# fine-tuning + calibration + ONNX export: see training/README (in progress)
+python -m venv venv && . venv/bin/activate
+pip install torch torchvision timm pillow numpy pyarrow huggingface_hub requests onnx
+cd training/standalone
+export DATA=~/data SCRATCH=/scratch
+python materialize_eval.py          # benchmark: SynthBuster, COCO, OpenFake test/reddit
+python materialize_train.py         # OpenFake train subset, COCO train, WikiArt
+python materialize_screenshots.py   # hard-real screenshots (+ --synth-url tar)
+python materialize_cartoons.py      # hard-real cartoons/thumbnails/portraits + AI-art positives
+python train.py --run-name ft --max-steps 4500 --thumb-p 0.35 \
+    --train-manifests openfake_train,coco_train,wikiart,screenshots_train,cartoons_train
+python soup_pt.py --ckpts a/best.pt,b/best.pt --out soup/best.pt   # average two runs
+python eval_logits.py --ckpt soup/best.pt --tag ft                 # clean/web/hard logits
+python export_fp16.py --ckpt soup/best.pt --out model_fp16.onnx    # fp16, fp32 I/O
 ```
 
-Evaluation data: SynthBuster (Zenodo), COCO val2017, and capped subsets of
-OpenFake test/reddit splits. Training data: OpenFake train subset + real photo
-datasets. Datasets are used under their respective licenses and are not
-redistributed with this repository.
+Calibration (the manifest's `bias`) is fit offline from the logit CSVs:
+maximize worst-tier balanced accuracy at the fixed 0.65 threshold subject to
+real-photo accuracy ≥ 95%. Datasets are used under their respective licenses
+and are not redistributed with this repository.
 
 ## Repository layout
 
@@ -86,8 +113,11 @@ extension/            the Chrome extension (load this directory unpacked)
   src/                service worker, offscreen inference, content script, UI
   vendor/ort/         ONNX Runtime Web (copied by npm run build, not committed)
   model_manifest.json pinned model URL + sha256 + calibration constants
-training/             Modal pipeline: datasets, eval, fine-tune, ONNX export
-  vendor/             Community Forensics model code (MIT, J. Park)
+training/standalone/  dataset materializers, fine-tune, soup, eval, ONNX export
+training/vendor/      Community Forensics model code (MIT, J. Park)
+eval/e2e/             browser end-to-end suites: scoring harness, badge/mode/
+                      leak/update tests, PIL-parity regression
+tools/                report mining: GitHub issue parser + labeling
 ```
 
 ## License
