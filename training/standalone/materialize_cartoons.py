@@ -81,6 +81,30 @@ SOURCES = [
     {"prefix": "aipnt", "repo": "poloclub/diffusiondb", "config": "2m_random_50k",
      "stride": 1, "train": 5000, "heldout": 500, "text_col": "prompt",
      "text_re": r"painting|watercolor|oil on canvas|impressionis|acrylic|gouache|artstation|concept art|fantasy art|digital painting|matte painting"},
+    # ft5 (category sweep findings): the Recraft structural gap gets a
+    # dedicated positive set (Rapidata preference pairs: every row carries a
+    # Recraft-side image); designed promo composites, pop-art/halftone print,
+    # and degraded reals close the top FP categories; selfie2anime provides
+    # both low-quality real selfies (imageA) and GAN anime outputs (imageB).
+    {"prefix": "rcf3", "repo": "Rapidata/Recraft-v3-24-7-25_t2i_human_preference",
+     "config": "default", "stride": 7, "train": 8000, "heldout": 800,
+     "pair": [["image1", "model1"], ["image2", "model2"]], "pair_match": "recraft"},
+    {"prefix": "rcf2", "repo": "Rapidata/Recraft-V2_t2i_human_preference",
+     "config": "default", "stride": 4, "train": 2500, "heldout": 250,
+     "pair": [["image1", "model1"], ["image2", "model2"]], "pair_match": "recraft"},
+    {"prefix": "popart", "repo": "luethan2025/WikiArt-Pop-Art", "config": "default",
+     "stride": 1, "train": 1350, "heldout": 130},
+    {"prefix": "poster", "repo": "skvarre/movie_posters-100k", "config": "default",
+     "stride": 4, "train": 6000, "heldout": 600, "text_col": "release_date",
+     "text_re": r"^(19|200|201)"},
+    {"prefix": "indoor", "repo": "FatimaSaadNaik/indoor-scenes-dataset", "config": "default",
+     "stride": 3, "train": 4000, "heldout": 400},
+    {"prefix": "selfa", "repo": "huggan/selfie2anime", "config": "default",
+     "stride": 1, "train": 3000, "heldout": 300, "img_col": "imageA"},
+    {"prefix": "gana", "repo": "huggan/selfie2anime", "config": "default",
+     "stride": 1, "train": 3000, "heldout": 300, "img_col": "imageB"},
+    {"prefix": "prodph", "repo": "rajuptvs/ecommerce_products_clip", "config": "default",
+     "stride": 1, "train": 2200, "heldout": 220},
 ]
 
 # prefix -> (label, source) for manifest rows
@@ -104,6 +128,14 @@ TAXONOMY = {
     "ytt": (0, "yt_thumbnail"),
     "celeb": (0, "celeb_portrait"),
     "aipnt": (1, "ai_painterly"),
+    "rcf3": (1, "ai_recraft3"),
+    "rcf2": (1, "ai_recraft2"),
+    "popart": (0, "popart_print"),
+    "poster": (0, "promo_poster"),
+    "indoor": (0, "degraded_indoor"),
+    "selfa": (0, "selfie_lowq"),
+    "gana": (1, "ai_gan_anime"),
+    "prodph": (0, "product_photo"),
 }
 
 
@@ -136,21 +168,41 @@ def ingest(spec):
                                 revision="refs/convert/parquet", token=token, local_dir=cache)
         pf = pq.ParquetFile(local)
         names = pf.schema_arrow.names
-        col_name = next(c for c in ("image", "img_bytes", "png") if c in names)
-        cols = [col_name] + ([spec["text_col"]] if spec.get("text_col") else [])
+        pair = spec.get("pair")
+        if pair:
+            cols = [c for p_ in pair for c in p_]
+        else:
+            col_name = spec.get("img_col") or next(c for c in ("image", "img_bytes", "png") if c in names)
+            cols = [col_name] + ([spec["text_col"]] if spec.get("text_col") else [])
         text_re = re.compile(spec["text_re"], re.I) if spec.get("text_re") else None
         for batch in pf.iter_batches(batch_size=32, columns=cols):
-            col = batch.column(0)
-            txt = batch.column(1) if text_re else None
-            for i in range(len(col)):
+            data = {c: batch.column(j) for j, c in enumerate(cols)}
+            nrows = len(batch.column(0))
+            for i in range(nrows):
                 if len(written) >= total_cap:
                     break
-                if text_re and not text_re.search(txt[i].as_py() or ""):
-                    continue
-                seen += 1
-                if (seen - 1) % spec["stride"]:
-                    continue
-                b = col[i].as_py() if col_name == "img_bytes" else col[i]["bytes"].as_py()
+                if pair:
+                    # preference-pair row: take the side whose model matches
+                    b = None
+                    for icol, mcol in pair:
+                        m = data[mcol][i].as_py() or ""
+                        if spec["pair_match"] in str(m).lower():
+                            v = data[icol][i]
+                            b = v.as_py() if not hasattr(v, "__getitem__") else v["bytes"].as_py()
+                            break
+                    if b is None:
+                        continue
+                    seen += 1
+                    if (seen - 1) % spec["stride"]:
+                        continue
+                else:
+                    if text_re and not text_re.search(data[spec["text_col"]][i].as_py() or ""):
+                        continue
+                    seen += 1
+                    if (seen - 1) % spec["stride"]:
+                        continue
+                    v = data[col_name][i]
+                    b = v.as_py() if col_name == "img_bytes" else v["bytes"].as_py()
                 if b is None:
                     continue
                 p = f"{DATA}/cartoons/train/{spec['prefix']}_{len(written):06d}{_sniff_ext(b)}"
