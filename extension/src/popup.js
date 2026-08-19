@@ -20,7 +20,11 @@ $("setup").addEventListener("click", () => chrome.tabs.create({ url: chrome.runt
 $("options").addEventListener("click", () => chrome.runtime.openOptionsPage());
 
 chrome.runtime.sendMessage({ kind: "aid:model-status" }, async (st) => {
-  $("ep").textContent = st && st.ready ? `ready (${st.ep})` : "not set up";
+  $("ep").textContent = st && st.ready
+    ? (st.selftest || "").startsWith("fallback")
+      ? "ready (wasm — gpu numerics fallback)"
+      : `ready (${st.ep})`
+    : "not set up";
   try {
     const manifest = await (await fetch(chrome.runtime.getURL("model_manifest.json"))).json();
     if (st && st.ready && manifest.version && st.version !== manifest.version) {

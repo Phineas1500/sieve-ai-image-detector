@@ -137,6 +137,42 @@ try {
   check("forced WASM: all images scored", wasmScores.length === files.length, `${wasmScores.length}/${files.length}`);
   await setSettings({ forceWasm: false });
   await setup.evaluate(() => chrome.runtime.sendMessage({ kind: "aid:reload-model" }));
+  await new Promise((r) => setTimeout(r, 3000));
+
+  // --- WebGPU numerical self-test: healthy GPU passes; a session whose GPU
+  // output disagrees with the WASM reference must auto-fall back to WASM
+  // (spoof the stored reference to simulate a numerically broken GPU stack)
+  const stOk = await setup.evaluate(() => chrome.runtime.sendMessage({ kind: "aid:model-status" }));
+  check("self-test: healthy WebGPU passes", !!stOk && (stOk.ep !== "webgpu" || stOk.selftest === "ok"),
+    `ep=${stOk && stOk.ep} selftest=${stOk && stOk.selftest}`);
+  if (stOk && stOk.ep === "webgpu") {
+    await setup.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const fh = await root.getFileHandle("model_meta.json");
+      const meta = JSON.parse(await (await fh.getFile()).text());
+      meta.wasm_ref_logit = 999; // no real GPU output can be within 0.5 of this
+      const w = await (await root.getFileHandle("model_meta.json", { create: true })).createWritable();
+      await w.write(JSON.stringify(meta));
+      await w.close();
+    });
+    await setup.evaluate(() => chrome.runtime.sendMessage({ kind: "aid:reload-model" }));
+    await new Promise((r) => setTimeout(r, 4000));
+    const stBad = await setup.evaluate(() => chrome.runtime.sendMessage({ kind: "aid:model-status" }));
+    check("self-test: divergent GPU falls back to WASM",
+      !!stBad && stBad.ep === "wasm" && (stBad.selftest || "").startsWith("fallback"),
+      `ep=${stBad && stBad.ep} selftest=${stBad && stBad.selftest}`);
+    // restore: drop the spoofed reference so the next session re-derives it
+    await setup.evaluate(async () => {
+      const root = await navigator.storage.getDirectory();
+      const fh = await root.getFileHandle("model_meta.json");
+      const meta = JSON.parse(await (await fh.getFile()).text());
+      delete meta.wasm_ref_logit;
+      const w = await (await root.getFileHandle("model_meta.json", { create: true })).createWritable();
+      await w.write(JSON.stringify(meta));
+      await w.close();
+    });
+    await setup.evaluate(() => chrome.runtime.sendMessage({ kind: "aid:reload-model" }));
+  }
 } finally {
   await browser.close().catch(() => {});
   server.close();

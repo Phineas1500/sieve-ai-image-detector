@@ -29,6 +29,36 @@ async function loadMeta() {
   return resp.json();
 }
 
+async function opfsWrite(name, data) {
+  const root = await navigator.storage.getDirectory();
+  const fh = await root.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(data);
+  await w.close();
+}
+
+// Deterministic dense test input (xorshift32) in normalized-image range:
+// exercises the whole network so per-platform fp16 divergence shows up.
+function selftestInput(C) {
+  const n = 3 * C * C;
+  const out = new Float32Array(n);
+  let s = 0x5eed1234 >>> 0;
+  for (let i = 0; i < n; i++) {
+    s ^= s << 13; s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5; s >>>= 0;
+    out[i] = (s / 4294967296 - 0.45) / 0.225;
+  }
+  return new ort.Tensor("float32", out, [1, 3, C, C]);
+}
+
+async function sessionLogit(session, tensor) {
+  const res = await session.run({ input: tensor });
+  return Number(res[session.outputNames[0]].data[0]);
+}
+
+let selftest = "n/a";
+
 async function createSession() {
   const modelFile = await opfsRead(MODEL_FILE);
   if (!modelFile) throw new Error("no-model");
@@ -55,20 +85,42 @@ async function createSession() {
     hardwareGpu = !forceWasm && !!adapter && !adapter.isFallbackAdapter;
   } catch {}
 
+  const wasmSession = () => ort.InferenceSession.create(buf, {
+    executionProviders: ["wasm"],
+    graphOptimizationLevel: "all",
+  });
+
   try {
     if (!hardwareGpu) throw new Error("no hardware WebGPU adapter");
     const s = await ort.InferenceSession.create(buf, {
       executionProviders: ["webgpu"],
       graphOptimizationLevel: "all",
     });
+    // Numerical self-test: WebGPU stacks (drivers, Chromium forks) can
+    // silently compute this fp16 graph WRONG while running fine — verified
+    // in the field (stable 5-logit divergence on one browser). Compare a
+    // fixed input against the deterministic WASM reference; GPU speed is
+    // not worth wrong verdicts.
+    const x = selftestInput(modelMeta.input_size || 384);
+    const zGpu = await sessionLogit(s, x);
+    let ref = modelMeta.wasm_ref_logit;
+    if (typeof ref !== "number") {
+      ref = await sessionLogit(await wasmSession(), x);
+      modelMeta.wasm_ref_logit = ref;
+      opfsWrite(META_FILE, JSON.stringify(modelMeta)).catch(() => {});
+    }
+    if (Math.abs(zGpu - ref) > 0.5) {
+      console.warn(`WebGPU self-test FAILED: logit ${zGpu.toFixed(3)} vs WASM ref ${ref.toFixed(3)} — using WASM`);
+      selftest = `fallback (gpu drift ${(zGpu - ref).toFixed(2)})`;
+      ep = "wasm";
+      return wasmSession();
+    }
+    selftest = "ok";
     ep = "webgpu";
     return s;
   } catch (e) {
     console.warn("WebGPU EP unavailable, falling back to WASM:", e);
-    const s = await ort.InferenceSession.create(buf, {
-      executionProviders: ["wasm"],
-      graphOptimizationLevel: "all",
-    });
+    const s = await wasmSession();
     ep = "wasm";
     return s;
   }
@@ -204,7 +256,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       try {
         await getSession();
-        sendResponse({ ok: true, ready: true, ep, version: (modelMeta || {}).version });
+        sendResponse({ ok: true, ready: true, ep, selftest, version: (modelMeta || {}).version });
       } catch (e) {
         sessionPromise = null;
         sendResponse({ ok: true, ready: false, error: String(e?.message || e) });
