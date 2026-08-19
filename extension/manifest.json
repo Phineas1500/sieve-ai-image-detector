@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sieve — Local AI Image Detector",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Detects AI-generated images entirely on-device (WebGPU/WASM). No cloud. No data leaves your browser.",
   "minimum_chrome_version": "124",
   "permissions": ["storage", "offscreen", "unlimitedStorage", "contextMenus"],

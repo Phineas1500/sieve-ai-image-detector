@@ -29,6 +29,19 @@ chrome.runtime.sendMessage({ kind: "aid:model-status" }, async (st) => {
   } catch {}
 });
 
+// Which weights are actually installed (OPFS meta) — the ground truth that
+// separates "stale model" reports from real regressions.
+(async () => {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const fh = await root.getFileHandle("model_meta.json");
+    const meta = JSON.parse(await (await fh.getFile()).text());
+    $("modelver").textContent = meta.version || "unknown";
+  } catch {
+    $("modelver").textContent = "none";
+  }
+})();
+
 chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
   if (!tab?.id) return;
   chrome.tabs.sendMessage(tab.id, { kind: "aid:page-stats" }, (r) => {

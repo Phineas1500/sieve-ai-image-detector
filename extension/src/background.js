@@ -7,17 +7,51 @@ const cache = new Map(); // url -> {score, ms, tta}
 const CACHE_MAX = 3000;
 const inflight = new Map(); // url -> Promise
 
+// The installed weights' version (OPFS meta): cache entries are only valid
+// for the model that produced them.
+async function installedModelVersion() {
+  try {
+    const root = await navigator.storage.getDirectory();
+    const fh = await root.getFileHandle("model_meta.json");
+    return JSON.parse(await (await fh.getFile()).text()).version || null;
+  } catch {
+    return null;
+  }
+}
+
 // The in-memory cache dies with every MV3 service-worker restart; mirror it in
 // session storage (survives restarts, cleared when the browser closes) so
-// features like report-prefill still know recent verdicts.
-chrome.storage.session.get("aidCache").then((d) => {
-  for (const [k, v] of d.aidCache || []) if (!cache.has(k)) cache.set(k, v);
-}).catch(() => {});
+// features like report-prefill still know recent verdicts. The mirror is
+// stamped with the model version that produced it: restoring scores from an
+// older model would resurrect stale verdicts across SW restarts (the bug
+// behind immortal wrong badges — a cache.clear() alone doesn't reach the
+// mirror).
+async function restoreCacheMirror() {
+  try {
+    const [d, ver] = await Promise.all([
+      chrome.storage.session.get(["aidCache", "aidCacheVer"]),
+      installedModelVersion(),
+    ]);
+    if (d.aidCacheVer && ver && d.aidCacheVer !== ver) {
+      await chrome.storage.session.remove(["aidCache", "aidCacheVer"]).catch(() => {});
+      return;
+    }
+    for (const [k, v] of d.aidCache || []) if (!cache.has(k)) cache.set(k, v);
+  } catch {}
+}
+restoreCacheMirror();
+// e2e hooks
+globalThis.__aidRestoreCacheMirror = restoreCacheMirror;
+globalThis.__aidCacheDump = () => [...cache.entries()];
 let persistTimer = null;
 function schedulePersist() {
   clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    chrome.storage.session.set({ aidCache: [...cache.entries()].slice(-1000) }).catch(() => {});
+  persistTimer = setTimeout(async () => {
+    const ver = await installedModelVersion();
+    chrome.storage.session.set({
+      aidCache: [...cache.entries()].slice(-1000),
+      aidCacheVer: ver,
+    }).catch(() => {});
   }, 2000);
 }
 
@@ -100,6 +134,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await ensureOffscreen();
       await chrome.runtime.sendMessage({ kind: "aid:reload-model" });
       cache.clear();
+      // reach the session-storage mirror too, or the next SW restart
+      // resurrects scores produced by the previous model
+      await chrome.storage.session.remove(["aidCache", "aidCacheVer"]).catch(() => {});
       sendResponse({ ok: true });
     })();
     return true;

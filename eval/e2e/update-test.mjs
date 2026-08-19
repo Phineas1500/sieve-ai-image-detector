@@ -63,6 +63,27 @@ const bundledVersion = await page.evaluate(async () =>
 await writeMeta(bundledVersion);
 check("current meta -> not outdated", (await outdated()) === false);
 
+// 5. session-storage cache mirror stamped with an older model's version must
+//    NOT be restored (the immortal-stale-badge bug): scores survive SW
+//    restarts via the mirror, so a model change has to invalidate it
+const seed = (ver) => page.evaluate((v) => chrome.storage.session.set({
+  aidCache: [["http://test/poisoned.jpg", { score: 0.955, ms: 1, tta: false }]],
+  aidCacheVer: v,
+}), ver);
+await seed("ft-OLD-model");
+await sw.evaluate(() => globalThis.__aidRestoreCacheMirror());
+const afterStale = await sw.evaluate(() => globalThis.__aidCacheDump().length);
+check("stale-version cache mirror dropped", afterStale === 0, `${afterStale} entries restored`);
+const mirrorGone = await page.evaluate(async () =>
+  (await chrome.storage.session.get("aidCache")).aidCache === undefined);
+check("stale mirror purged from session storage", mirrorGone);
+
+// 6. matching-version mirror restores normally
+await seed(bundledVersion);
+await sw.evaluate(() => globalThis.__aidRestoreCacheMirror());
+const afterMatch = await sw.evaluate(() => globalThis.__aidCacheDump().length);
+check("current-version cache mirror restored", afterMatch === 1, `${afterMatch} entries`);
+
 await browser.close();
 console.log(failures ? `${failures} FAILURES` : "ALL CHECKS PASSED");
 process.exit(failures ? 1 : 0);
