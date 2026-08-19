@@ -1,0 +1,72 @@
+{
+ "sample_images": [
+  {
+   "file": "000000573943.jpg",
+   "score": 0.0756066284904948
+  },
+  {
+   "file": "000000575500.jpg",
+   "score": 1.8783743231968635e-05
+  },
+  {
+   "file": "000000576654.jpg",
+   "score": 5.563944638000932e-05
+  },
+  {
+   "file": "000000578093.jpg",
+   "score": 0.00010808332622881911
+  },
+  {
+   "file": "000000580418.jpg",
+   "score": 1.6066630658352372e-05
+  },
+  {
+   "file": "000000581781.jpg",
+   "score": 0.0005154266469827513
+  },
+  {
+   "file": "fake_r1f1178cet.png",
+   "score": 0.9999959402089849
+  },
+  {
+   "file": "fake_r1f1a3258t.png",
+   "score": 0.9999994151296189
+  },
+  {
+   "file": "fake_r1f2c2acft.png",
+   "score": 0.9999898731741147
+  },
+  {
+   "file": "fake_r1f4a44a7t.png",
+   "score": 0.9999914054613281
+  },
+  {
+   "file": "fake_r1f5ad4e0t.png",
+   "score": 0.9999934103254077
+  },
+  {
+   "file": "unsure_cand_448263.jpg",
+   "score": 0.7806323948264823
+  },
+  {
+   "file": "unsure_cand_566282.jpg",
+   "score": 0.8593477105002678
+  },
+  {
+   "file": "unsure_flux2_000048.jpg",
+   "score": 0.5144783731656357
+  },
+  {
+   "file": "unsure_ft44s_real_033.jpg",
+   "score": 0.5879005188739944
+  },
+  {
+   "file": "unsure_ft44s_recraft_024.jpg",
+   "score": 0.5797145155392543
+  },
+  {
+   "file": "unsure_ft44s_reddit_031.jpg",
+   "score": 0.5527980399188386
+  }
+ ]
+}
