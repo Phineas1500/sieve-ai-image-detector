@@ -16,8 +16,10 @@ import random
 
 from materialize_eval import DATA, _write_manifest
 
-FRAGILE = ("of_midjourney-7", "of_gpt-image-2", "of_gpt-image-1.5", "of_seedream-v5.0",
-           "of_nano-banana-pro")
+# match by family prefix: the benchmark's newest model names (midjourney-7,
+# gpt-image-2) don't appear in OpenFake's TRAIN split, which carries the
+# previous generation of the same families (midjourney-6, nano-banana-2, ...)
+FRAGILE_PREFIXES = ("of_midjourney", "of_gpt-image", "of_nano-banana", "of_seedream", "of_dall")
 CAP = 8000
 HELDOUT = 800
 
@@ -30,7 +32,7 @@ def main():
         print("small_pos: done marker present, skipping")
         return
     with open(f"{DATA}/manifests/openfake_train.csv") as f:
-        rows = [r for r in csv.DictReader(f) if r["source"] in FRAGILE]
+        rows = [r for r in csv.DictReader(f) if r["source"].startswith(FRAGILE_PREFIXES)]
     rng = random.Random(5)
     rng.shuffle(rows)
     rows = rows[:CAP + HELDOUT]
