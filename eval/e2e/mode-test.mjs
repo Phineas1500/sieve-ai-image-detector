@@ -22,9 +22,15 @@ const files = readdirSync(IMAGES).filter((f) => MIME[extname(f).toLowerCase()]);
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split("?")[0]);
   if (url === "/") {
+    const proxy = new URL(req.url, "http://localhost").searchParams.get("proxy") === "1";
     res.writeHead(200, { "content-type": "text/html" });
-    res.end(`<!doctype html><meta charset="utf-8"><title>modes</title>` +
-      files.map((f) => `<img src="/img/${encodeURIComponent(f)}" style="display:block;max-width:480px;margin:16px">`).join(""));
+    const images = files.map((f) => proxy
+      ? `<div class="aid-proxy" style="position:relative;width:480px;height:360px;margin:16px;overflow:hidden">` +
+        `<div data-aid-background style="position:absolute;inset:0;background:center/cover no-repeat url('/img/${encodeURIComponent(f)}')"></div>` +
+        `<img src="/img/${encodeURIComponent(f)}" style="position:absolute;inset:0;width:100%;height:100%;opacity:0">` +
+        `</div>`
+      : `<img src="/img/${encodeURIComponent(f)}" style="display:block;max-width:480px;margin:16px">`).join("");
+    res.end(`<!doctype html><meta charset="utf-8"><title>modes</title>${images}`);
   } else if (url.startsWith("/img/")) {
     try {
       res.writeHead(200, { "content-type": MIME[extname(url).toLowerCase()] || "application/octet-stream" });
@@ -59,9 +65,9 @@ try {
   );
   const setSettings = (obj) => setup.evaluate((o) => new Promise((r) => chrome.storage.sync.set(o, r)), obj);
 
-  const visit = async () => {
+  const visit = async (proxy = false) => {
     const page = await browser.newPage();
-    await page.goto(`http://localhost:${port}/`, { waitUntil: "networkidle2" });
+    await page.goto(`http://localhost:${port}/?proxy=${proxy ? "1" : "0"}`, { waitUntil: "networkidle2" });
     await page.evaluate(async () => {
       for (let y = 0; y < document.body.scrollHeight; y += 500) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 60)); }
       window.scrollTo(0, 0);
@@ -70,15 +76,55 @@ try {
   };
 
   // --- default auto mode: everything scored (baseline sanity)
-  await setSettings({ scanMode: "auto", flaggedAction: "blur", badgeDisplay: "all" });
+  await setSettings({ scanMode: "auto", blur: true, flaggedAction: "blur", badgeDisplay: "all" });
   let page = await visit();
   await page.waitForFunction((n) => document.querySelectorAll("img[data-aid-score]").length >= n,
     { timeout: 300000, polling: 500 }, files.length);
   check("auto mode scores all", true, `${files.length}/${files.length}`);
+  const blurAudit = await page.evaluate(() => {
+    const flagged = [...document.querySelectorAll("img[data-aid-score]")].filter((i) => +i.dataset.aidScore >= 0.65);
+    return {
+      flagged: flagged.length,
+      blurred: flagged.filter((i) => i.classList.contains("aid-blurred") && getComputedStyle(i).filter.includes("blur(")).length,
+    };
+  });
+  check("blur mode: flagged images are blurred", blurAudit.blurred === blurAudit.flagged && blurAudit.flagged > 0,
+    `${blurAudit.blurred}/${blurAudit.flagged} blurred`);
+
+  await setSettings({ blur: false, flaggedAction: "badge" });
+  await page.waitForFunction(() => [...document.querySelectorAll("img[data-aid-score]")]
+    .filter((i) => +i.dataset.aidScore >= 0.65)
+    .every((i) => !i.classList.contains("aid-blurred")), { timeout: 10000, polling: 100 });
+  const unblurAudit = await page.evaluate(() => {
+    const flagged = [...document.querySelectorAll("img[data-aid-score]")].filter((i) => +i.dataset.aidScore >= 0.65);
+    return { flagged: flagged.length, blurred: flagged.filter((i) => i.classList.contains("aid-blurred")).length };
+  });
+  check("blur toggle off: flagged images are revealed", unblurAudit.blurred === 0,
+    `${unblurAudit.blurred}/${unblurAudit.flagged} still blurred`);
+  await page.close();
+
+  // --- background-image twin: X/Twitter-style renderers must be blurred too
+  await setSettings({ blur: true, flaggedAction: "blur" });
+  page = await visit(true);
+  await page.waitForFunction((n) => document.querySelectorAll("img[data-aid-score]").length >= n,
+    { timeout: 300000, polling: 500 }, files.length);
+  const proxyAudit = await page.evaluate(() => {
+    const flagged = [...document.querySelectorAll(".aid-proxy img[data-aid-score]")]
+      .filter((i) => +i.dataset.aidScore >= 0.65);
+    return {
+      flagged: flagged.length,
+      blurred: flagged.filter((img) => {
+        const bg = img.parentElement.querySelector("[data-aid-background]");
+        return bg?.classList.contains("aid-blurred") && getComputedStyle(bg).filter.includes("blur(");
+      }).length,
+    };
+  });
+  check("background-image twins: flagged visuals are blurred", proxyAudit.blurred === proxyAudit.flagged && proxyAudit.flagged > 0,
+    `${proxyAudit.blurred}/${proxyAudit.flagged} blurred`);
   await page.close();
 
   // --- manual mode: nothing scored automatically
-  await setSettings({ scanMode: "manual" });
+  await setSettings({ scanMode: "manual", blur: true, flaggedAction: "blur" });
   page = await visit();
   await new Promise((r) => setTimeout(r, 6000));
   const manualScored = await page.evaluate(() => document.querySelectorAll("img[data-aid-score]").length);
@@ -86,7 +132,7 @@ try {
   await page.close();
 
   // --- hide mode: flagged images collapsed, others visible
-  await setSettings({ scanMode: "auto", flaggedAction: "hide" });
+  await setSettings({ scanMode: "auto", blur: false, flaggedAction: "hide" });
   page = await visit();
   await page.waitForFunction((n) => document.querySelectorAll("img[data-aid-score]").length >= n,
     { timeout: 300000, polling: 500 }, files.length);
@@ -106,7 +152,7 @@ try {
   await page.close();
 
   // --- flags-only badges
-  await setSettings({ flaggedAction: "blur", badgeDisplay: "flags" });
+  await setSettings({ blur: true, flaggedAction: "blur", badgeDisplay: "flags" });
   page = await visit();
   await page.waitForFunction((n) => document.querySelectorAll("img[data-aid-score]").length >= n,
     { timeout: 300000, polling: 500 }, files.length);

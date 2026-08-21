@@ -22,11 +22,11 @@
   color: #fff;
 }
 
-img.aid-blurred {
+.aid-blurred {
   filter: blur(18px) saturate(0.6) !important;
 }
 
-img.aid-hidden {
+.aid-hidden {
   display: none !important;
 }
 

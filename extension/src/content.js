@@ -85,6 +85,54 @@
     return false;
   }
 
+  function coversImage(candidate, imageRect) {
+    const r = candidate.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return false;
+    const overlapW = Math.max(0, Math.min(r.right, imageRect.right) - Math.max(r.left, imageRect.left));
+    const overlapH = Math.max(0, Math.min(r.bottom, imageRect.bottom) - Math.max(r.top, imageRect.top));
+    return overlapW * overlapH >= imageRect.width * imageRect.height * 0.8;
+  }
+
+  // Some sites (notably X/Twitter) keep the real <img> transparent and paint
+  // the same asset through a sibling background-image div. Apply presentation
+  // state to those visual twins as well as to the analyzed image.
+  function visualTargets(img, previous = []) {
+    const targets = [img, ...previous.filter((target) => target !== img && target.isConnected)];
+    const parent = img.parentElement;
+    if (!parent) return targets;
+    const imageRect = img.getBoundingClientRect();
+    if (imageRect.width < 1 || imageRect.height < 1) return targets;
+    const candidates = [parent, ...parent.querySelectorAll("*")].slice(0, 65);
+    for (const candidate of candidates) {
+      if (targets.includes(candidate) || !coversImage(candidate, imageRect)) continue;
+      const cs = getComputedStyle(candidate);
+      if (cs.display === "none" || cs.visibility === "hidden" || cs.backgroundImage === "none") continue;
+      targets.push(candidate);
+    }
+    return targets;
+  }
+
+  function effectiveFlaggedAction() {
+    const action = settings.flaggedAction;
+    // Compatibility for profiles that already stored the old popup's
+    // `blur: false` while the newer options defaulted flaggedAction to blur.
+    if (action === "blur" && settings.blur === false) return "badge";
+    return ["badge", "blur", "hide"].includes(action)
+      ? action
+      : settings.blur ? "blur" : "badge";
+  }
+
+  function syncVisualState(img, st, isAI, action) {
+    const blurred = isAI && action === "blur" && !st.revealed;
+    const hidden = isAI && action === "hide";
+    st.targets = visualTargets(img, st.targets);
+    for (const target of st.targets) {
+      if (target !== img) target.classList.add("aid-visual-twin");
+      target.classList.toggle("aid-blurred", blurred);
+      target.classList.toggle("aid-hidden", hidden);
+    }
+  }
+
   function positionBadge(img, badge) {
     const r = img.getBoundingClientRect();
     const offscreen =
@@ -118,10 +166,11 @@
       badge.addEventListener("click", (e) => {
         e.stopPropagation();
         e.preventDefault();
-        img.classList.toggle("aid-blurred");
+        st.revealed = !img.classList.contains("aid-blurred");
+        syncVisualState(img, st, st.score >= settings.threshold, "blur");
       });
       document.documentElement.appendChild(badge);
-      st = { badge, score };
+      st = { badge, score, revealed: false, action: null, targets: [] };
       badges.set(img, st);
     }
     st.score = score;
@@ -141,9 +190,10 @@
       : isUnsure
         ? `Uncertain — AI confidence ${pct}%, below the ${Math.round(thr * 100)}% flag threshold`
         : `Likely real (AI confidence ${pct}%)`;
-    const act = settings.flaggedAction || (settings.blur ? "blur" : "badge");
-    img.classList.toggle("aid-blurred", isAI && act === "blur");
-    img.classList.toggle("aid-hidden", isAI && act === "hide");
+    const act = effectiveFlaggedAction();
+    if (st.action !== act) st.revealed = false;
+    st.action = act;
+    syncVisualState(img, st, isAI, act);
     positionBadge(img, st.badge);
   }
 
@@ -208,6 +258,8 @@
             seen.delete(img);
             continue;
           }
+          const stAction = effectiveFlaggedAction();
+          syncVisualState(img, st, st.score >= settings.threshold, stAction);
           positionBadge(img, st.badge);
         }
         ticking = false;
