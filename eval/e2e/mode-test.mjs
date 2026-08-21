@@ -1,6 +1,7 @@
 // Regression test for v0.5.0 modes: manual scanning, hide (slopblocker), and
 // flags-only badge display — asserted through the real extension.
 import http from "node:http";
+import { deflateSync } from "node:zlib";
 import { readdirSync, readFileSync } from "node:fs";
 import { extname, join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,18 +20,74 @@ const EXT = resolve(here, "../../extension");
 const MIME = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
 const files = readdirSync(IMAGES).filter((f) => MIME[extname(f).toLowerCase()]);
 
+// Degenerate inputs (issue-#41-adjacent): solid fills and pure noise must get
+// NO verdict — the model scores them confident nonsense. Generated here as
+// minimal PNGs so the sample corpus stays untouched.
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+const crc32 = (buf) => {
+  let c = 0xffffffff;
+  for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+};
+const pngChunk = (type, data) => {
+  const out = Buffer.alloc(12 + data.length);
+  out.writeUInt32BE(data.length, 0);
+  out.write(type, 4, "latin1");
+  data.copy(out, 8);
+  out.writeUInt32BE(crc32(Buffer.concat([Buffer.from(type, "latin1"), data])), 8 + data.length);
+  return out;
+};
+function makePng(size, pixel) {
+  const raw = Buffer.alloc(size * (1 + size * 3));
+  for (let y = 0; y < size; y++) {
+    const row = y * (1 + size * 3) + 1;
+    for (let x = 0; x < size; x++) {
+      const [r, g, b] = pixel(x, y);
+      raw[row + x * 3] = r; raw[row + x * 3 + 1] = g; raw[row + x * 3 + 2] = b;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8; ihdr[9] = 2;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", ihdr), pngChunk("IDAT", deflateSync(raw)), pngChunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+let noiseSeed = 0x9e3779b9;
+const xorshift = () => {
+  noiseSeed ^= noiseSeed << 13; noiseSeed ^= noiseSeed >>> 17; noiseSeed ^= noiseSeed << 5;
+  return (noiseSeed >>> 0) & 0xff;
+};
+const DEGEN = {
+  "black.png": makePng(256, () => [0, 0, 0]),
+  "noise.png": makePng(256, () => [xorshift(), xorshift(), xorshift()]),
+};
+
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent(req.url.split("?")[0]);
   if (url === "/") {
     const proxy = new URL(req.url, "http://localhost").searchParams.get("proxy") === "1";
     res.writeHead(200, { "content-type": "text/html" });
-    const images = files.map((f) => proxy
+    const degen = new URL(req.url, "http://localhost").searchParams.get("degen") === "1"
+      ? Object.keys(DEGEN).map((f) =>
+          `<img class="degen" src="/degen/${f}" style="display:block;width:256px;height:256px;margin:16px">`).join("")
+      : "";
+    const images = degen + files.map((f) => proxy
       ? `<div class="aid-proxy" style="position:relative;width:480px;height:360px;margin:16px;overflow:hidden">` +
         `<div data-aid-background style="position:absolute;inset:0;background:center/cover no-repeat url('/img/${encodeURIComponent(f)}')"></div>` +
         `<img src="/img/${encodeURIComponent(f)}" style="position:absolute;inset:0;width:100%;height:100%;opacity:0">` +
         `</div>`
       : `<img src="/img/${encodeURIComponent(f)}" style="display:block;max-width:480px;margin:16px">`).join("");
     res.end(`<!doctype html><meta charset="utf-8"><title>modes</title>${images}`);
+  } else if (url.startsWith("/degen/")) {
+    const buf = DEGEN[url.slice(7)];
+    if (buf) { res.writeHead(200, { "content-type": "image/png" }); res.end(buf); }
+    else res.writeHead(404).end();
   } else if (url.startsWith("/img/")) {
     try {
       res.writeHead(200, { "content-type": MIME[extname(url).toLowerCase()] || "application/octet-stream" });
@@ -65,9 +122,9 @@ try {
   );
   const setSettings = (obj) => setup.evaluate((o) => new Promise((r) => chrome.storage.sync.set(o, r)), obj);
 
-  const visit = async (proxy = false) => {
+  const visit = async (proxy = false, extra = "") => {
     const page = await browser.newPage();
-    await page.goto(`http://localhost:${port}/?proxy=${proxy ? "1" : "0"}`, { waitUntil: "networkidle2" });
+    await page.goto(`http://localhost:${port}/?proxy=${proxy ? "1" : "0"}${extra}`, { waitUntil: "networkidle2" });
     await page.evaluate(async () => {
       for (let y = 0; y < document.body.scrollHeight; y += 500) { window.scrollTo(0, y); await new Promise((r) => setTimeout(r, 60)); }
       window.scrollTo(0, 0);
@@ -90,6 +147,26 @@ try {
   });
   check("blur mode: flagged images are blurred", blurAudit.blurred === blurAudit.flagged && blurAudit.flagged > 0,
     `${blurAudit.blurred}/${blurAudit.flagged} blurred`);
+
+  // --- badge click toggles the blur on a single image (issue #44: the
+  // reveal boolean shipped inverted in v0.10.1, making clicks a no-op)
+  const clickBadge = () => page.evaluate(async () => {
+    const img = [...document.querySelectorAll("img[data-aid-score]")].find((i) => +i.dataset.aidScore >= 0.65);
+    img.scrollIntoView({ block: "center" });
+    await new Promise((r) => setTimeout(r, 400)); // let the scroll handler reposition badges
+    const r = img.getBoundingClientRect();
+    const badge = [...document.querySelectorAll(".aid-badge")].find((b) =>
+      b.style.display !== "none" &&
+      Math.abs(parseFloat(b.style.top) - (scrollY + r.top + 6)) < 2 &&
+      Math.abs(parseFloat(b.style.left) - (scrollX + r.left + 6)) < 2);
+    if (!badge) return "no-badge";
+    badge.click();
+    return img.classList.contains("aid-blurred");
+  });
+  const afterFirstClick = await clickBadge();
+  const afterSecondClick = await clickBadge();
+  check("badge click reveals a blurred image", afterFirstClick === false, `blurred=${afterFirstClick}`);
+  check("second badge click re-blurs it", afterSecondClick === true, `blurred=${afterSecondClick}`);
 
   await setSettings({ blur: false, flaggedAction: "badge" });
   await page.waitForFunction(() => [...document.querySelectorAll("img[data-aid-score]")]
@@ -121,6 +198,19 @@ try {
   });
   check("background-image twins: flagged visuals are blurred", proxyAudit.blurred === proxyAudit.flagged && proxyAudit.flagged > 0,
     `${proxyAudit.blurred}/${proxyAudit.flagged} blurred`);
+  await page.close();
+
+  // --- degenerate inputs: solid fills and pure noise get NO verdict
+  page = await visit(false, "&degen=1");
+  await page.waitForFunction((n) => document.querySelectorAll("img[data-aid-score]").length >= n,
+    { timeout: 300000, polling: 500 }, files.length);
+  await new Promise((r) => setTimeout(r, 4000)); // give degen images time to (wrongly) score
+  const degenAudit = await page.evaluate(() => ({
+    total: document.querySelectorAll("img.degen").length,
+    scored: document.querySelectorAll("img.degen[data-aid-score]").length,
+  }));
+  check("degenerate inputs: no verdict badged", degenAudit.total === 2 && degenAudit.scored === 0,
+    `${degenAudit.scored}/${degenAudit.total} scored`);
   await page.close();
 
   // --- manual mode: nothing scored automatically

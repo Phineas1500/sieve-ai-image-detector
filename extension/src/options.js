@@ -7,7 +7,6 @@ chrome.storage.sync.get(defaults, (s) => {
   const action = ["badge", "blur", "hide"].includes(s.flaggedAction)
     ? s.flaggedAction
     : s.blur ? "blur" : "badge";
-  $("blur").checked = action === "blur";
   $("scanMode").value = s.scanMode;
   $("flaggedAction").value = action;
   $("badgeDisplay").value = s.badgeDisplay;
@@ -18,10 +17,6 @@ chrome.storage.sync.get(defaults, (s) => {
 });
 
 $("enabled").addEventListener("change", (e) => chrome.storage.sync.set({ enabled: e.target.checked }));
-$("blur").addEventListener("change", (e) => chrome.storage.sync.set({
-  blur: e.target.checked,
-  flaggedAction: e.target.checked ? "blur" : "badge",
-}));
 $("threshold").addEventListener("input", (e) => {
   $("thval").textContent = `${Math.round(e.target.value * 100)}%`;
   chrome.storage.sync.set({ threshold: Number(e.target.value) });

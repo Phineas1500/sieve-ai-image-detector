@@ -329,6 +329,36 @@ function calibrate(logit, meta) {
   return 1 / (1 + Math.exp(-z));
 }
 
+// Degenerate inputs (solid fills, pure noise) sit far outside the training
+// manifold and score confident nonsense (solid black -> 0.91, RGB noise ->
+// 0.99). Two cheap statistics separate them from photographs: luma variance
+// is ~0 for flat fills, and adjacent-pixel correlation is ~0 for noise,
+// while any real image is strongly locally correlated. No verdict is badged
+// for these — there is nothing meaningful to say.
+function degenerateReason(img) {
+  const { data, width, height } = img;
+  const sy = Math.max(1, height >> 7); // sample ~128 rows
+  let n = 0, sum = 0, sum2 = 0;
+  let m = 0, sa = 0, sb = 0, sab = 0, sa2 = 0, sb2 = 0;
+  for (let y = 0; y < height; y += sy) {
+    const row = y * width * 4;
+    let prev = -1;
+    for (let x = 0; x < width; x++) {
+      const i = row + x * 4;
+      const l = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      n++; sum += l; sum2 += l * l;
+      if (prev >= 0) { m++; sa += prev; sb += l; sab += prev * l; sa2 += prev * prev; sb2 += l * l; }
+      prev = l;
+    }
+  }
+  const varL = sum2 / n - (sum / n) ** 2;
+  if (varL < 4) return "flat"; // luma std < 2 of 255
+  const cov = sab / m - (sa / m) * (sb / m);
+  const denom = Math.sqrt(Math.max((sa2 / m - (sa / m) ** 2) * (sb2 / m - (sb / m) ** 2), 1e-9));
+  if (cov / denom < 0.15) return "noise";
+  return null;
+}
+
 // serialize inference; decode may overlap
 let chain = Promise.resolve();
 
@@ -346,6 +376,8 @@ async function infer(url) {
   const img = await decodeRGBA(blob);
   {
     if (img.width < 32 || img.height < 32) throw new Error("too-small");
+    const degen = degenerateReason(img);
+    if (degen) throw new Error(`degenerate-${degen}`);
     const input = preprocess(img, modelMeta);
 
     const runLogit = (tensor) =>

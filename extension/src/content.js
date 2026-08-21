@@ -166,7 +166,8 @@
       badge.addEventListener("click", (e) => {
         e.stopPropagation();
         e.preventDefault();
-        st.revealed = !img.classList.contains("aid-blurred");
+        // clicking a blurred image reveals it; clicking a revealed one re-blurs
+        st.revealed = img.classList.contains("aid-blurred");
         syncVisualState(img, st, st.score >= settings.threshold, "blur");
       });
       document.documentElement.appendChild(badge);
@@ -213,13 +214,34 @@
       if (resp && typeof resp.score === "number") {
         analyzedCount++;
         if (resp.score >= settings.threshold) flaggedCount++;
+        failures.delete(img);
         img.dataset.aidTta = String(!!resp.tta); // diagnostics/tests
         applyResult(img, resp.score);
+      } else if (resp && resp.error && !permanentError(resp.error)) {
+        // Transient failure (fetch hiccup, GPU glitch): without a retry the
+        // image stays in `seen` and is silently never analyzed again.
+        scheduleRetry(img);
       }
     } catch {
       // service worker restarting; will retry on next intersection
       seen.delete(img);
     }
+  }
+
+  // Errors that re-running cannot fix — retrying would loop forever.
+  function permanentError(err) {
+    return err === "too-small" || String(err).startsWith("degenerate");
+  }
+
+  const failures = new WeakMap(); // img -> consecutive transient failures
+  function scheduleRetry(img) {
+    const n = (failures.get(img) || 0) + 1;
+    failures.set(img, n);
+    if (n > 3) return; // give up: three strikes with backoff
+    setTimeout(() => {
+      seen.delete(img);
+      if (img.isConnected && fetchable(img)) analyze(img);
+    }, 3000 * n);
   }
 
   const io = new IntersectionObserver(
