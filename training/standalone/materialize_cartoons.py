@@ -105,6 +105,24 @@ SOURCES = [
      "stride": 1, "train": 3000, "heldout": 300, "img_col": "imageB"},
     {"prefix": "prodph", "repo": "rajuptvs/ecommerce_products_clip", "config": "default",
      "stride": 1, "train": 2200, "heldout": 220},
+    # --- ft6: photoreal / edit-class positives + hard reals for the FP clusters
+    # (studio product shots, press portraits, low-light phone photos, game
+    # captures). See materialize_edits.py / materialize_commons.py for the two
+    # non-parquet sources (gptedit/editsrc, press).
+    {"prefix": "nb150k", "repo": "bitmind/Nano-banana-150k", "config": "default",
+     "stride": 3, "train": 20000, "heldout": 2000},
+    {"prefix": "fswap", "repo": "bitmind/face-swap", "config": "default",
+     "stride": 1, "train": 7000, "heldout": 700, "img_col": "image"},
+    {"prefix": "ideo", "repo": "bitmind/ideogram-27k", "config": "default",
+     "stride": 2, "train": 6000, "heldout": 600},
+    {"prefix": "abo", "repo": "suvadityamuk/amazon-berkeley-objects", "config": "images_original",
+     "stride": 2, "train": 10000, "heldout": 1000},
+    {"prefix": "steam", "repo": "taesiri/SteamScreenshots_Compressed", "config": "default",
+     "stride": 1, "train": 9000, "heldout": 900, "img_col": "jpg"},
+    {"prefix": "lowl", "repo": "ARM4588/Lowlight-Smartphone-Dataset", "config": "default",
+     "stride": 1, "train": 5000, "heldout": 500, "img_col": "png"},
+    {"prefix": "lowl2", "repo": "ishicode/low-light-dataset", "config": "default",
+     "stride": 1, "train": 520, "heldout": 60},
 ]
 
 # prefix -> (label, source) for manifest rows
@@ -136,6 +154,16 @@ TAXONOMY = {
     "selfa": (0, "selfie_lowq"),
     "gana": (1, "ai_gan_anime"),
     "prodph": (0, "product_photo"),
+    "nb150k": (1, "ai_nanobanana"),
+    "fswap": (1, "ai_faceswap"),
+    "ideo": (1, "ai_ideogram"),
+    "abo": (0, "product_catalog"),
+    "steam": (0, "game_screenshot"),
+    "lowl": (0, "lowlight_phone"),
+    "lowl2": (0, "lowlight_phone"),
+    "gptedit": (1, "ai_gpt_edit"),
+    "editsrc": (0, "edit_source_photo"),
+    "press": (0, "press_photo"),
 }
 
 
@@ -172,7 +200,7 @@ def ingest(spec):
         if pair:
             cols = [c for p_ in pair for c in p_]
         else:
-            col_name = spec.get("img_col") or next(c for c in ("image", "img_bytes", "png") if c in names)
+            col_name = spec.get("img_col") or next(c for c in ("image", "img_bytes", "png", "jpg") if c in names)
             cols = [col_name] + ([spec["text_col"]] if spec.get("text_col") else [])
         text_re = re.compile(spec["text_re"], re.I) if spec.get("text_re") else None
         for batch in pf.iter_batches(batch_size=32, columns=cols):
@@ -201,8 +229,11 @@ def ingest(spec):
                     seen += 1
                     if (seen - 1) % spec["stride"]:
                         continue
-                    v = data[col_name][i]
-                    b = v.as_py() if col_name == "img_bytes" else v["bytes"].as_py()
+                    raw = data[col_name][i].as_py()
+                    # image struct {bytes,path} / raw bytes / list-of-ints
+                    # (bitmind/face-swap stores JPEG bytes as an int list)
+                    b = (raw.get("bytes") if isinstance(raw, dict)
+                         else bytes(raw) if isinstance(raw, (list, tuple)) else raw)
                 if b is None:
                     continue
                 p = f"{DATA}/cartoons/train/{spec['prefix']}_{len(written):06d}{_sniff_ext(b)}"

@@ -12,7 +12,9 @@ JPEG q45-80, writes DATA/small_pos + manifests/small_pos.csv (label 1).
 import csv
 import io
 import os
+import shutil
 import random
+import sys
 
 from materialize_eval import DATA, _write_manifest
 
@@ -24,9 +26,51 @@ CAP = 8000
 HELDOUT = 800
 
 
+def downscale(rng, src):
+    from PIL import Image
+
+    img = Image.open(src).convert("RGB")
+    t = rng.randint(180, 320)
+    w, h = img.size
+    if min(w, h) > t:
+        s = t / min(w, h)
+        img = img.resize((max(64, round(w * s)), max(64, round(h * s))), Image.BILINEAR)
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=rng.randint(45, 80))
+    return buf.getvalue()
+
+
+def rebuild_heldout():
+    """ft6: the original heldout was downscaled TRAIN images, so it flattered
+    every model that had seen them at full size. Draw it from
+    openfake_validation instead (never trained on)."""
+    with open(f"{DATA}/manifests/openfake_validation.csv") as f:
+        rows = [r for r in csv.DictReader(f) if r["source"].startswith(FRAGILE_PREFIXES)]
+    rng = random.Random(7)
+    rng.shuffle(rows)
+    d = f"{DATA}/small_pos/heldout"
+    shutil.rmtree(d, ignore_errors=True)
+    os.makedirs(d)
+    out = []
+    for i, r in enumerate(rows[:HELDOUT]):
+        try:
+            b = downscale(rng, r["path"])
+        except Exception:
+            continue
+        p = f"{d}/{r['source']}_{i:05d}.jpg"
+        with open(p, "wb") as f:
+            f.write(b)
+        out.append([p, 1, r["source"] + "_small", "small_pos_heldout"])
+    _write_manifest(f"{DATA}/manifests/small_pos_heldout.csv", out)
+    print(f"small_pos_heldout (from validation): {len(out)} rows")
+
+
 def main():
     from PIL import Image
 
+    if "--rebuild-heldout" in sys.argv:
+        rebuild_heldout()
+        return
     marker = f"{DATA}/small_pos/.done"
     if os.path.exists(marker):
         print("small_pos: done marker present, skipping")
