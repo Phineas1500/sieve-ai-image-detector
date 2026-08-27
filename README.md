@@ -25,6 +25,13 @@ For reference, the stock Community Forensics base model scores 75.8 / 65.9 / 56.
 under the same protocol (its detection rate on GPT Image 2 is 7%; ours is >90%).
 Inference: ~91ms/image end-to-end (WebGPU, Apple Silicon), ~30ms model time.
 
+Scores are a property of the **bytes a page delivers**, not of the underlying
+scene: the same photo re-shipped as a heavy recompression, a tiny upscaled
+thumbnail, or a collage can score very differently (the web/hard rows above
+bound the common cases; extreme degradation is not fully covered). Treat
+"AI n%" as evidence to weight, not a verdict — see issues #41/#42 for the
+measured failure modes.
+
 ## How it works
 
 - A content script finds images on the page as they approach the viewport
