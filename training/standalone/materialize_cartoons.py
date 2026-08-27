@@ -161,6 +161,8 @@ TAXONOMY = {
     "gptedit": (1, "ai_gpt_edit"),
     "editsrc": (0, "edit_source_photo"),
     "press": (0, "press_photo"),
+    "nbpro": (1, "ai_nanobanana_pro_wild"),
+    "gpt2": (1, "ai_gptimage2_wild"),
 }
 
 
