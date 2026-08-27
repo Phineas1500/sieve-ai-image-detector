@@ -7,3 +7,6 @@ dist/
 *.safetensors
 data/
 .venv/
+
+# personal Claude Code overrides
+.claude/settings.local.json
