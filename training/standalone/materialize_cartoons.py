@@ -108,13 +108,10 @@ SOURCES = [
     # --- ft6: photoreal / edit-class positives + hard reals for the FP clusters
     # (studio product shots, press portraits, low-light phone photos, game
     # captures). See materialize_edits.py / materialize_commons.py for the two
-    # non-parquet sources (gptedit/editsrc, press).
-    {"prefix": "nb150k", "repo": "bitmind/Nano-banana-150k", "config": "default",
-     "stride": 3, "train": 20000, "heldout": 2000},
+    # non-parquet sources (gptedit/editsrc, press); materialize_zip.py for the
+    # zip-packaged bitmind sets (nb150k, ideo).
     {"prefix": "fswap", "repo": "bitmind/face-swap", "config": "default",
      "stride": 1, "train": 7000, "heldout": 700, "img_col": "image"},
-    {"prefix": "ideo", "repo": "bitmind/ideogram-27k", "config": "default",
-     "stride": 2, "train": 6000, "heldout": 600},
     {"prefix": "abo", "repo": "suvadityamuk/amazon-berkeley-objects", "config": "images_original",
      "stride": 2, "train": 10000, "heldout": 1000},
     {"prefix": "steam", "repo": "taesiri/SteamScreenshots_Compressed", "config": "default",
