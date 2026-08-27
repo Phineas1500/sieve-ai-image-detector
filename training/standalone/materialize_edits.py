@@ -19,6 +19,7 @@ import io
 import os
 import shutil
 import tarfile
+import time
 
 import requests
 
@@ -33,32 +34,57 @@ IMG_EXT = (".png", ".jpg", ".jpeg", ".webp")
 
 
 class Chain(io.RawIOBase):
-    """Sequential byte stream over several HTTP parts."""
+    """Sequential byte stream over several HTTP parts, resuming a dropped
+    connection with a Range request (the CDN cuts long streams mid-part)."""
+
+    RETRIES = 8
 
     def __init__(self, urls):
         self.urls, self.it, self.buf = list(urls), None, b""
+        self.url, self.offset = None, 0
 
     def readable(self):
         return True
+
+    def _open(self, url, offset):
+        headers = {"Range": f"bytes={offset}-"} if offset else {}
+        r = requests.get(url, stream=True, timeout=120, headers=headers)
+        r.raise_for_status()
+        if offset and r.status_code != 206:
+            raise RuntimeError("server ignored Range; cannot resume")
+        self.url, self.offset = url, offset
+        self.it = r.iter_content(chunk_size=1 << 20)
 
     def _open_next(self):
         if not self.urls:
             return False
         url = self.urls.pop(0)
         print(f"  streaming {url.rsplit('/', 1)[-1]}", flush=True)
-        r = requests.get(url, stream=True, timeout=120)
-        r.raise_for_status()
-        self.it = r.iter_content(chunk_size=1 << 20)
+        self._open(url, 0)
         return True
+
+    def _chunk(self):
+        for attempt in range(self.RETRIES):
+            try:
+                return next(self.it)
+            except StopIteration:
+                return None
+            except (requests.RequestException, ConnectionError) as e:
+                print(f"  connection dropped at {self.offset / 1e9:.2f} GB ({type(e).__name__}); resuming", flush=True)
+                time.sleep(2 * (attempt + 1))
+                self._open(self.url, self.offset)
+        raise RuntimeError("too many resume attempts")
 
     def readinto(self, b):
         while not self.buf:
             if self.it is None and not self._open_next():
                 return 0
-            try:
-                self.buf = next(self.it)
-            except StopIteration:
+            chunk = self._chunk()
+            if chunk is None:
                 self.it = None
+                continue
+            self.buf = chunk
+            self.offset += len(chunk)
         n = min(len(b), len(self.buf))
         b[:n] = self.buf[:n]
         self.buf = self.buf[n:]
