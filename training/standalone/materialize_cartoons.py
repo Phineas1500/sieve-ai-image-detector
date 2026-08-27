@@ -268,7 +268,14 @@ def manifests():
 
 
 if __name__ == "__main__":
+    import traceback
+    failed = []
     for spec in SOURCES:
-        ingest(spec)
+        try:
+            ingest(spec)
+        except Exception:  # one bad source must not block the rest (markers make reruns cheap)
+            traceback.print_exc()
+            failed.append(spec["prefix"])
     manifests()
+    print("FAILED SOURCES:", ", ".join(failed) if failed else "none")
     print("ALL DONE")
