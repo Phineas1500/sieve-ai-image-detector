@@ -16,6 +16,7 @@ import concurrent.futures as cf
 import json
 import os
 import shutil
+import time
 
 from materialize_eval import DATA, SCRATCH
 from materialize_cartoons import manifests
@@ -55,6 +56,8 @@ def ingest(spec):
     os.makedirs(f"{DATA}/cartoons/heldout", exist_ok=True)
     cache = f"{SCRATCH}/goku_{spec['prefix']}"
     token = os.environ.get("HF_TOKEN") or None
+    if not token:
+        print("  WARNING: no HF_TOKEN — per-file downloads are rate-limited (HTTP 429) when anonymous", flush=True)
     meta = hf_hub_download(spec["repo"], "metadata.jsonl", repo_type="dataset", token=token, local_dir=cache)
     cands = candidates(meta, spec["per_prompt"])
     cap = spec["train"] + spec["heldout"]
@@ -63,15 +66,15 @@ def ingest(spec):
     print(f"  {spec['prefix']}: {len(cands)} candidate images, stride {stride} -> {len(picked)}", flush=True)
 
     def fetch(path):
-        for _ in range(3):
+        for attempt in range(4):
             try:
                 return hf_hub_download(spec["repo"], path, repo_type="dataset", token=token, local_dir=cache)
             except Exception:
-                pass
+                time.sleep(3 * (attempt + 1))
         return None
 
     written = []
-    with cf.ThreadPoolExecutor(16) as ex:
+    with cf.ThreadPoolExecutor(6 if token else 2) as ex:
         for local in ex.map(fetch, picked):
             if not local or os.path.getsize(local) < 1024:
                 continue
