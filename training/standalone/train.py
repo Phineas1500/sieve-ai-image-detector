@@ -91,6 +91,8 @@ def main():
     ap.add_argument("--val-cap", type=int, default=6000)
     ap.add_argument("--thumb-p", type=float, default=0.25)
     ap.add_argument("--num-workers", type=int, default=12)
+    ap.add_argument("--exclude-sources", default="",
+                    help="regex; training items whose source matches are dropped (ablations)")
     ap.add_argument("--boost", default="",
                     help="oversample by source: comma list of <source-regex>=<factor>, e.g. "
                          "'^(ai_nanobanana|ai_gpt_edit|press_photo)$=3'. Applied before fake/real "
@@ -120,6 +122,11 @@ def main():
         return items
 
     train_items = load_items(args.train_manifests)
+    if args.exclude_sources:
+        ex = re.compile(args.exclude_sources)
+        before = len(train_items)
+        train_items = [it for it in train_items if not ex.search(it.get("source", ""))]
+        print(f"exclude-sources {args.exclude_sources}: dropped {before - len(train_items)} items")
     val_items = load_items(args.val_manifest)
     if args.val_cap and len(val_items) > args.val_cap:
         pyrandom.Random(0).shuffle(val_items)
