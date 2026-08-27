@@ -9,6 +9,7 @@ Usage:
       --train-manifests openfake_train,coco_train,wikiart --val-manifest openfake_validation
 """
 import argparse
+import re
 import csv
 import io
 import json
@@ -90,6 +91,10 @@ def main():
     ap.add_argument("--val-cap", type=int, default=6000)
     ap.add_argument("--thumb-p", type=float, default=0.25)
     ap.add_argument("--num-workers", type=int, default=12)
+    ap.add_argument("--boost", default="",
+                    help="oversample by source: comma list of <source-regex>=<factor>, e.g. "
+                         "'^(ai_nanobanana|ai_gpt_edit|press_photo)$=3'. Applied before fake/real "
+                         "balancing, so the class mix stays 50/50.")
     args = ap.parse_args()
 
     import numpy as np
@@ -154,8 +159,18 @@ def main():
             except Exception:
                 return torch.zeros(3, C, C), -1.0
 
-    w_fake, w_real = 0.5 / max(n_fake, 1), 0.5 / max(n_real, 1)
-    weights = [w_fake if int(it["label"]) == 1 else w_real for it in train_items]
+    boosts = [(re.compile(k), float(v)) for k, v in
+              (b.split("=") for b in args.boost.split(",") if b)]
+    def boost(it):
+        return max([f for pat, f in boosts if pat.search(it.get("source", ""))] or [1.0])
+    item_boost = [boost(it) for it in train_items]
+    mass_fake = sum(b for it, b in zip(train_items, item_boost) if int(it["label"]) == 1)
+    mass_real = sum(b for it, b in zip(train_items, item_boost) if int(it["label"]) == 0)
+    weights = [(0.5 / max(mass_fake, 1e-9) if int(it["label"]) == 1 else 0.5 / max(mass_real, 1e-9)) * b
+               for it, b in zip(train_items, item_boost)]
+    if boosts:
+        boosted = sum(1 for b in item_boost if b > 1)
+        print(f"boost: {boosted} items boosted ({args.boost})")
     sampler = WeightedRandomSampler(weights, num_samples=len(train_items), replacement=True)
     dl = DataLoader(TrainDS(), batch_size=args.batch_size, sampler=sampler, num_workers=args.num_workers,
                     pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=4)
