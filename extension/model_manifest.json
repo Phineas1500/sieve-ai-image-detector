@@ -1,7 +1,7 @@
 {
-  "version": "ft44s-2026-08-19",
-  "model_url": "https://github.com/Phineas1500/sieve-ai-image-detector/releases/download/v0.10.0/ft44s_best_fp16.onnx",
-  "sha256": "513da879ae017cbf1e5c9e03089537f2de6149d4f3549c3e3c480b3ea2204016",
+  "version": "ft5s-2026-08-26",
+  "model_url": "https://github.com/Phineas1500/sieve-ai-image-detector/releases/download/v0.11.0/ft5s_best_fp16.onnx",
+  "sha256": "94635fc475ae987155e3123a9275cbb94d4c44f7cb6fdbe86a1141c9d64298b5",
   "input_size": 384,
   "resize_shorter_side": 440,
   "norm_mean": [
@@ -17,7 +17,7 @@
   "calibration": {
     "type": "sigmoid",
     "temperature": 1.0,
-    "bias": 0.43
+    "bias": 0.42
   },
   "tta": {
     "enabled": true,
