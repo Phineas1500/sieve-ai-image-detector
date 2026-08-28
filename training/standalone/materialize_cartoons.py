@@ -137,11 +137,11 @@ SOURCES = [
     # mirror; label 1 = Nano Banana edit, label 0 = untouched original, verified
     # by eye), clean modern photography (Unsplash), and low-res reals matched to
     # the GenImage cohort so "low-res ImageNet-looking" stops reading as AI.
-    {"prefix": "pbedit", "repo": "vanloc1808/pico-banana-smolvlm-format-with-rejected-answer", "config": "default",
+    {"prefix": "pbedit", "max_side": 1536, "repo": "vanloc1808/pico-banana-smolvlm-format-with-rejected-answer", "config": "default",
      "stride": 1, "train": 8000, "heldout": 800, "text_col": "label", "text_re": r"^1$"},
-    {"prefix": "pborig", "repo": "vanloc1808/pico-banana-smolvlm-format-with-rejected-answer", "config": "default",
+    {"prefix": "pborig", "max_side": 1536, "repo": "vanloc1808/pico-banana-smolvlm-format-with-rejected-answer", "config": "default",
      "stride": 1, "train": 8000, "heldout": 800, "text_col": "label", "text_re": r"^0$"},
-    {"prefix": "unspl", "repo": "1aurent/unsplash-lite", "config": "default",
+    {"prefix": "unspl", "max_side": 1536, "repo": "1aurent/unsplash-lite", "config": "default",
      "stride": 3, "train": 6000, "heldout": 600, "img_col": "photo"},
     {"prefix": "calt", "repo": "bitmind/caltech-256", "config": "default",
      "stride": 4, "train": 6000, "heldout": 600},
@@ -203,6 +203,23 @@ TAXONOMY = {
     "coco256": (0, "lowres_real"),
     "press2": (0, "press_photo"),
 }
+
+
+def _bounded_jpeg(b, max_side):
+    import io
+    from PIL import Image
+
+    try:
+        img = Image.open(io.BytesIO(b)).convert("RGB")
+    except Exception:
+        return None
+    w, h = img.size
+    if max(w, h) > max_side:
+        sc = max_side / max(w, h)
+        img = img.resize((max(32, round(w * sc)), max(32, round(h * sc))), Image.BILINEAR)
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=92)
+    return out.getvalue()
 
 
 def ingest(spec):
@@ -274,6 +291,13 @@ def ingest(spec):
                          else bytes(raw) if isinstance(raw, (list, tuple)) else raw)
                 if b is None:
                     continue
+                if spec.get("max_side"):
+                    # bound disk use for multi-MB camera originals; applied to
+                    # EVERY image of the spec (resize + re-encode) so the
+                    # processing itself carries no label information
+                    b = _bounded_jpeg(b, spec["max_side"])
+                    if b is None:
+                        continue
                 p = f"{DATA}/cartoons/train/{spec['prefix']}_{len(written):06d}{_sniff_ext(b)}"
                 with open(p, "wb") as f:
                     f.write(b)
