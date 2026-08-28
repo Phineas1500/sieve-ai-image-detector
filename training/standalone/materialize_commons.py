@@ -23,6 +23,9 @@ API = "https://commons.wikimedia.org/w/api.php"
 UA = {"User-Agent": "SieveDataBot/1.0 (https://github.com/Phineas1500/sieve-ai-image-detector; sriram.kiron@gmail.com)"}
 CAT = "Category:Photographs by Gage Skidmore"
 STRIDE, TRAIN, HELDOUT, WIDTH = 25, 4500, 450, 1280
+# a second pass (prefix press2) takes the titles the first pass skipped
+PREFIX = os.environ.get("PRESS_PREFIX", "press")
+OFFSET = int(os.environ.get("PRESS_OFFSET", "0"))
 
 
 def titles():
@@ -69,14 +72,14 @@ def fetch(url):
 
 
 def main():
-    marker = f"{DATA}/cartoons/.press_done"
+    marker = f"{DATA}/cartoons/.{PREFIX}_done"
     if os.path.exists(marker):
         print("press: done marker present, skipping")
         return
     os.makedirs(f"{DATA}/cartoons/train", exist_ok=True)
     os.makedirs(f"{DATA}/cartoons/heldout", exist_ok=True)
     want = TRAIN + HELDOUT
-    picked = [t for i, t in enumerate(titles()) if i % STRIDE == 0]
+    picked = [t for i, t in enumerate(titles()) if i % STRIDE == OFFSET]
     print(f"  {len(picked)} titles sampled (stride {STRIDE})")
     urls = []
     for i in range(0, len(picked), 50):
@@ -90,7 +93,7 @@ def main():
         for b in ex.map(fetch, urls[:want]):
             if not b:
                 continue
-            p = f"{DATA}/cartoons/train/press_{len(written):06d}.jpg"
+            p = f"{DATA}/cartoons/train/{PREFIX}_{len(written):06d}.jpg"
             with open(p, "wb") as f:
                 f.write(b)
             written.append(p)
@@ -100,7 +103,7 @@ def main():
     for p in written[-ho:] if ho else []:
         shutil.move(p, f"{DATA}/cartoons/heldout/{os.path.basename(p)}")
     open(marker, "w").close()
-    print(f"press: {len(written) - ho} train / {ho} heldout")
+    print(f"{PREFIX}: {len(written) - ho} train / {ho} heldout")
     manifests()
 
 

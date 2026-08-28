@@ -133,6 +133,20 @@ SOURCES = [
      "stride": 10, "train": 6000, "heldout": 600},
     {"prefix": "sgan", "repo": "javi22/this-person-does-not-exist-10k", "config": "default",
      "stride": 2, "train": 4500, "heldout": 450},
+    # --- ft9: real-photo AI edits + their genuine originals (Pico-Banana-400K
+    # mirror; label 1 = Nano Banana edit, label 0 = untouched original, verified
+    # by eye), clean modern photography (Unsplash), and low-res reals matched to
+    # the GenImage cohort so "low-res ImageNet-looking" stops reading as AI.
+    {"prefix": "pbedit", "repo": "vanloc1808/pico-banana-smolvlm-format-with-rejected-answer", "config": "default",
+     "stride": 1, "train": 8000, "heldout": 800, "text_col": "label", "text_re": r"^1$"},
+    {"prefix": "pborig", "repo": "vanloc1808/pico-banana-smolvlm-format-with-rejected-answer", "config": "default",
+     "stride": 1, "train": 8000, "heldout": 800, "text_col": "label", "text_re": r"^0$"},
+    {"prefix": "unspl", "repo": "1aurent/unsplash-lite", "config": "default",
+     "stride": 3, "train": 6000, "heldout": 600, "img_col": "photo"},
+    {"prefix": "calt", "repo": "bitmind/caltech-256", "config": "default",
+     "stride": 4, "train": 6000, "heldout": 600},
+    {"prefix": "coco256", "repo": "bitmind/MS-COCO-unique-256", "config": "default",
+     "stride": 5, "train": 8000, "heldout": 800},
 ]
 
 # prefix -> (label, source) for manifest rows
@@ -182,6 +196,12 @@ TAXONOMY = {
     "gvq": (1, "ai_vqdm_2022"),
     "ffhq": (0, "face_ffhq256"),
     "sgan": (1, "ai_stylegan_face"),
+    "pbedit": (1, "ai_nanobanana_edit"),
+    "pborig": (0, "photo_hires_real"),
+    "unspl": (0, "photo_unsplash"),
+    "calt": (0, "lowres_real"),
+    "coco256": (0, "lowres_real"),
+    "press2": (0, "press_photo"),
 }
 
 

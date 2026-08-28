@@ -20,9 +20,10 @@ from materialize_eval import DATA, _write_manifest
 from materialize_small import downscale
 
 POS_SOURCES = {"ai_nanobanana_pro_wild", "ai_gptimage2_wild", "ai_nanobanana", "ai_gpt_edit",
-               "ai_ideogram", "ai_stylegan_face"}
+               "ai_ideogram", "ai_stylegan_face", "ai_nanobanana_edit"}
 NEG_SOURCES = {"press_photo", "product_catalog", "lowlight_phone", "degraded_indoor", "selfie_lowq",
-               "celeb_portrait", "yt_thumbnail", "face_ffhq256", "game_screenshot", "product_photo"}
+               "celeb_portrait", "yt_thumbnail", "face_ffhq256", "game_screenshot", "product_photo",
+               "photo_hires_real", "photo_unsplash"}
 CAP, HELDOUT, COCO_EXTRA = 8000, 800, 3000
 
 
