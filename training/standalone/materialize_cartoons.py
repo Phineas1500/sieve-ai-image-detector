@@ -279,7 +279,7 @@ def ingest(spec):
                     if (seen - 1) % spec["stride"]:
                         continue
                 else:
-                    if text_re and not text_re.search(data[spec["text_col"]][i].as_py() or ""):
+                    if text_re and not text_re.search(str(data[spec["text_col"]][i].as_py() or "")):
                         continue
                     seen += 1
                     if (seen - 1) % spec["stride"]:
