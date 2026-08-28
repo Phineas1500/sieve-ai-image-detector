@@ -18,6 +18,8 @@ import os
 import shutil
 import time
 
+import requests
+
 from materialize_eval import DATA, SCRATCH
 from materialize_cartoons import manifests
 
@@ -65,24 +67,40 @@ def ingest(spec):
     picked = cands[::stride][:cap]
     print(f"  {spec['prefix']}: {len(cands)} candidate images, stride {stride} -> {len(picked)}", flush=True)
 
-    def fetch(path):
-        for attempt in range(4):
+    base = f"https://huggingface.co/datasets/{spec['repo']}/resolve/main/"
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    sess = requests.Session()
+
+    def fetch(job):
+        i, path = job
+        dest = f"{DATA}/cartoons/train/{spec['prefix']}_{i:06d}{os.path.splitext(path)[1].lower()}"
+        if os.path.exists(dest):
+            return dest
+        for attempt in range(6):
             try:
-                return hf_hub_download(spec["repo"], path, repo_type="dataset", token=token, local_dir=cache)
-            except Exception:
-                time.sleep(3 * (attempt + 1))
+                r = sess.get(base + path, headers=headers, timeout=60)
+                if r.status_code == 200 and len(r.content) > 1024:
+                    with open(dest, "wb") as f:
+                        f.write(r.content)
+                    return dest
+                if r.status_code == 429:
+                    time.sleep(float(r.headers.get("Retry-After", 15)) + attempt * 5)
+                    continue
+                if r.status_code in (404, 403):
+                    return None
+            except requests.RequestException:
+                pass
+            time.sleep(2 * (attempt + 1))
         return None
 
     written = []
-    with cf.ThreadPoolExecutor(6 if token else 2) as ex:
-        for local in ex.map(fetch, picked):
-            if not local or os.path.getsize(local) < 1024:
-                continue
-            p = f"{DATA}/cartoons/train/{spec['prefix']}_{len(written):06d}{os.path.splitext(local)[1].lower()}"
-            shutil.move(local, p)
-            written.append(p)
-            if len(written) % 2000 == 0:
-                print(f"  {spec['prefix']}: {len(written)}/{len(picked)}", flush=True)
+    with cf.ThreadPoolExecutor(4) as ex:
+        for k, dest in enumerate(ex.map(fetch, list(enumerate(picked)))):
+            if dest:
+                written.append(dest)
+            if (k + 1) % 2000 == 0:
+                print(f"  {spec['prefix']}: {k + 1}/{len(picked)} ({len(written)} ok)", flush=True)
+    written.sort()
     shutil.rmtree(cache, ignore_errors=True)
     ho = min(spec["heldout"], len(written) // 5)
     for p in written[-ho:] if ho else []:
