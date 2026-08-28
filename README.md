@@ -17,9 +17,9 @@ COCO val2017 + OpenFake reals. Scored at the fixed **0.65** confidence threshold
 
 | condition | balanced accuracy | AI recall | real-photo accuracy |
 |---|---|---|---|
-| clean | **91.2%** | 85.4% | 97.1% |
-| web (≤768px, JPEG q60) | **87.1%** | 77.8% | 96.4% |
-| hard (≤512px, JPEG q40) | **86.1%** | 77.1% | 95.0% |
+| clean | **91.6%** | 86.2% | 97.0% |
+| web (≤768px, JPEG q60) | **87.5%** | 78.8% | 96.2% |
+| hard (≤512px, JPEG q40) | **86.2%** | 77.3% | 95.0% |
 
 For reference, the stock Community Forensics base model scores 75.8 / 65.9 / 56.5
 under the same protocol (its detection rate on GPT Image 2 is 7%; ours is >90%).
@@ -55,8 +55,13 @@ measured failure modes.
   and hard-real categories sourced from user reports and audits
   (screenshots, cartoon frames, game art, YouTube thumbnail composites,
   movie posters, product photos, degraded/low-quality photos, retouched
-  portraits). Shipped weights are a **weight average of two identically
-  trained runs**, which stabilizes borderline scores across releases.
+  portraits), in-the-wild Nano Banana Pro / GPT-Image-2 renders as posted
+  on social media, AI edits of real photos, face swaps, 2021–22 generators
+  (BigGAN, GLIDE, ADM, VQDM) and small-resolution copies of both fakes and
+  reals. Shipped weights are a **weight average** of fine-tuning rounds
+  (each itself an average of two identically trained runs), which
+  stabilizes borderline scores and lets a new data round add coverage
+  without giving back the previous round's accuracy.
 - Borderline images (calibrated 25–85%) get a second, native-resolution
   inference pass (selective TTA) and average the two views.
 - Every analyzed image gets a confidence badge: red **AI n%** at or above the
@@ -104,9 +109,11 @@ python materialize_train.py         # OpenFake train subset, COCO train, WikiArt
 python materialize_screenshots.py   # hard-real screenshots (+ --synth-url tar)
 python materialize_cartoons.py      # hard-real categories (cartoons, posters, product, degraded) + AI-art positives
 python materialize_small.py         # downscaled copies of scale-fragile generator positives
-python train.py --run-name ft --max-steps 4500 --thumb-p 0.35 \
-    --train-manifests openfake_train,coco_train,wikiart,screenshots_train,cartoons_train,small_pos
-python soup_pt.py --ckpts a/best.pt,b/best.pt --out soup/best.pt   # average two runs
+python materialize_edits.py materialize_commons.py materialize_zip.py materialize_goku.py   # ft6+ sources
+python materialize_small2.py        # downscaled copies of the newer AI sources and of reals
+python train.py --run-name ft --max-steps 6500 --thumb-p 0.35 --exclude-sources '^edit_source_photo$' \
+    --train-manifests openfake_train,coco_train,wikiart,screenshots_train,cartoons_train,small_pos,small_pos2,small_neg
+python soup_pt.py --ckpts a/best.pt,b/best.pt --out soup/best.pt   # average two runs (and, for a release, the previous release's soup)
 python eval_logits.py --ckpt soup/best.pt --tag ft                 # clean/web/hard logits
 python export_fp16.py --ckpt soup/best.pt --out model_fp16.onnx    # fp16, fp32 I/O
 ```
