@@ -120,6 +120,19 @@ SOURCES = [
      "stride": 1, "train": 5000, "heldout": 500, "img_col": "png"},
     {"prefix": "lowl2", "repo": "ishicode/low-light-dataset", "config": "default",
      "stride": 1, "train": 520, "heldout": 60},
+    # --- ft8: 2021-22 generator cohort (audit #49), faces (audit #48)
+    {"prefix": "gbig", "repo": "bitmind/GenImage_BigGAN", "config": "default",
+     "stride": 60, "train": 2400, "heldout": 240},
+    {"prefix": "ggli", "repo": "bitmind/GenImage_glide", "config": "default",
+     "stride": 60, "train": 2400, "heldout": 240},
+    {"prefix": "gadm", "repo": "bitmind/GenImage_ADM", "config": "default",
+     "stride": 60, "train": 2400, "heldout": 240},
+    {"prefix": "gvq", "repo": "bitmind/GenImage_VQDM", "config": "default",
+     "stride": 60, "train": 2400, "heldout": 240},
+    {"prefix": "ffhq", "repo": "bitmind/ffhq-256", "config": "default",
+     "stride": 10, "train": 6000, "heldout": 600},
+    {"prefix": "sgan", "repo": "javi22/this-person-does-not-exist-10k", "config": "default",
+     "stride": 2, "train": 4500, "heldout": 450},
 ]
 
 # prefix -> (label, source) for manifest rows
@@ -163,6 +176,12 @@ TAXONOMY = {
     "press": (0, "press_photo"),
     "nbpro": (1, "ai_nanobanana_pro_wild"),
     "gpt2": (1, "ai_gptimage2_wild"),
+    "gbig": (1, "ai_biggan_2022"),
+    "ggli": (1, "ai_glide_2022"),
+    "gadm": (1, "ai_adm_2022"),
+    "gvq": (1, "ai_vqdm_2022"),
+    "ffhq": (0, "face_ffhq256"),
+    "sgan": (1, "ai_stylegan_face"),
 }
 
 
