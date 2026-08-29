@@ -20,19 +20,20 @@ SAMPLES = os.path.join(HERE, "..", "eval", "e2e", "sample_images")
 
 
 class Scorer:
-    def __init__(self, model, bias):
+    def __init__(self, model, bias, size=384, resize=440):
         self.sess = ort.InferenceSession(model, providers=["CPUExecutionProvider"])
         self.iname = self.sess.get_inputs()[0].name
-        self.bias = bias
+        self.bias, self.size, self.resize = bias, size, resize
 
     def logit(self, img):
         img = img.convert("RGB")
         w, h = img.size
-        s = 440 / min(w, h)
+        s = self.resize / min(w, h)
         img = img.resize((round(w * s), round(h * s)), Image.BILINEAR)
         w, h = img.size
-        l, t = (w - 384) // 2, (h - 384) // 2
-        x = np.asarray(img.crop((l, t, l + 384, t + 384)), dtype=np.float32) / 255.0
+        C = self.size
+        l, t = (w - C) // 2, (h - C) // 2
+        x = np.asarray(img.crop((l, t, l + C, t + C)), dtype=np.float32) / 255.0
         x = ((x - MEAN) / STD).transpose(2, 0, 1)[None]
         return float(self.sess.run(None, {self.iname: x})[0].ravel()[0])
 
@@ -83,9 +84,10 @@ AI_T = [("native", lambda i: i), ("thumb128", lambda i: jpeg(thumb_up(i, 128), 8
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True); ap.add_argument("--bias", type=float, required=True)
+    ap.add_argument("--size", type=int, default=384); ap.add_argument("--resize", type=int, default=440)
     ap.add_argument("mode", choices=["pilref", "battery", "files"]); ap.add_argument("paths", nargs="*")
     a = ap.parse_args()
-    sc = Scorer(a.model, a.bias)
+    sc = Scorer(a.model, a.bias, a.size, a.resize)
     if a.mode == "pilref":
         files = sorted(f for f in os.listdir(SAMPLES) if f.lower().endswith((".jpg", ".jpeg", ".png", ".webp")))
         out = {"sample_images": [{"file": f, "score": sc.score(Image.open(os.path.join(SAMPLES, f)))} for f in files]}

@@ -91,6 +91,9 @@ def main():
     ap.add_argument("--val-cap", type=int, default=6000)
     ap.add_argument("--thumb-p", type=float, default=0.25)
     ap.add_argument("--num-workers", type=int, default=12)
+    ap.add_argument("--backbone", default="cf", help="cf | dinov2_b14 | dinov2_b14_336 | clip_b16 | dinov2_s14")
+    ap.add_argument("--freeze-blocks", type=int, default=0,
+                    help="freeze embeddings + the first N transformer blocks (timm backbones)")
     ap.add_argument("--exclude-sources", default="",
                     help="regex; training items whose source matches are dropped (ablations)")
     ap.add_argument("--boost", default="",
@@ -106,10 +109,12 @@ def main():
     from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
     from torchvision import transforms
 
-    from vendor.cf_models import ViTClassifier
+    from backbones import build, freeze_blocks, sizes
 
     Image.MAX_IMAGE_PIXELS = None
     torch.backends.cuda.matmul.allow_tf32 = True
+    if args.backbone != "cf":
+        args.input_size, _ = sizes(args.backbone)
     C = args.input_size
     resize_size = 440 if C == 384 else 256
     norm = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -183,8 +188,13 @@ def main():
                     pin_memory=True, drop_last=True, persistent_workers=True, prefetch_factor=4)
     vdl = DataLoader(ValDS(), batch_size=128, num_workers=args.num_workers, pin_memory=True)
 
-    model = ViTClassifier.from_pretrained(args.hf_repo, device="cpu").cuda()
-    opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.05)
+    model = build(args.backbone, hf_repo=args.hf_repo).cuda()
+    if args.freeze_blocks:
+        nfrozen = freeze_blocks(model, args.freeze_blocks)
+        print(f"backbone {args.backbone}: froze {nfrozen} param tensors (first {args.freeze_blocks} blocks + embeddings)")
+    ntrain = sum(p.numel() for p in model.parameters() if p.requires_grad); ntot = sum(p.numel() for p in model.parameters())
+    print(f"params: {ntrain/1e6:.1f}M trainable / {ntot/1e6:.1f}M total; input {C}px")
+    opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=0.05)
     total_steps = args.max_steps or (len(dl) * args.epochs)
     warmup = min(300, total_steps // 10)
     sched = torch.optim.lr_scheduler.LambdaLR(
@@ -231,7 +241,7 @@ def main():
                 loss = crit(z, yb[keep].cuda().to(z.dtype))
             opt.zero_grad(set_to_none=True)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
             opt.step()
             sched.step()
             step += 1
@@ -240,10 +250,10 @@ def main():
             if step % args.val_every == 0 or step == total_steps:
                 m = validate()
                 print(f"  VAL step{step}: {json.dumps(m)}")
-                torch.save({"model_state_dict": model.state_dict(), "step": step, "val": m}, f"{ckdir}/last.pt")
+                torch.save({"model_state_dict": model.state_dict(), "step": step, "val": m, "backbone": args.backbone, "input_size": C}, f"{ckdir}/last.pt")
                 if m["best_bal"] > best_bal:
                     best_bal = m["best_bal"]
-                    torch.save({"model_state_dict": model.state_dict(), "step": step, "val": m}, f"{ckdir}/best.pt")
+                    torch.save({"model_state_dict": model.state_dict(), "step": step, "val": m, "backbone": args.backbone, "input_size": C}, f"{ckdir}/best.pt")
                     print(f"  new best ({best_bal})")
             if step >= total_steps:
                 done = True

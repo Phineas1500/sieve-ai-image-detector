@@ -20,11 +20,13 @@ def main():
     import numpy as np
     import torch
 
-    from vendor.cf_models import ViTClassifier
+    from backbones import build, sizes
 
-    C = args.input_size
-    model = ViTClassifier(model_size="small", input_size=C, patch_size=16, device="cpu")
     sd = torch.load(args.ckpt, map_location="cpu")
+    backbone = sd.get("backbone", "cf") if isinstance(sd, dict) else "cf"
+    C = args.input_size if backbone == "cf" else sizes(backbone)[0]
+    print(f"backbone {backbone}, input {C}px")
+    model = build(backbone, pretrained=False)
     model.load_state_dict(sd.get("model_state_dict", sd))
     model.eval().cuda()
 
