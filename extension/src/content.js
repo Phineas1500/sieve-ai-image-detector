@@ -216,6 +216,7 @@
         if (resp.score >= settings.threshold) flaggedCount++;
         failures.delete(img);
         img.dataset.aidTta = String(!!resp.tta); // diagnostics/tests
+        if (typeof resp.ms === "number") img.dataset.aidMs = String(resp.ms); // inference time, for latency tests
         applyResult(img, resp.score);
       } else if (resp && resp.error && !permanentError(resp.error)) {
         // Transient failure (fetch hiccup, GPU glitch): without a retry the

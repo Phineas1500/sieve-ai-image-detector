@@ -71,7 +71,7 @@ try {
   await new Promise((r) => setTimeout(r, 1500));
   Object.assign(results, await page.evaluate(() => Object.fromEntries(
     [...document.querySelectorAll("img[data-file]")].map((i) => [i.dataset.file,
-      i.dataset.aidScore === undefined ? null : { score: +i.dataset.aidScore, tta: i.dataset.aidTta === "true" }]))));
+      i.dataset.aidScore === undefined ? null : { score: +i.dataset.aidScore, tta: i.dataset.aidTta === "true", ms: i.dataset.aidMs === undefined ? null : +i.dataset.aidMs }]))));
 } finally {
   writeFileSync(MANIFEST, origManifest);
   await browser.close();
@@ -79,4 +79,6 @@ try {
 }
 writeFileSync(OUT, JSON.stringify({ model: args.model, bias: BIAS, results }, null, 1));
 const scored = Object.values(results).filter(Boolean);
-console.log(`${scored.length}/${files.length} scored, tta fired on ${scored.filter((r) => r.tta).length} -> ${OUT}`);
+const ms = scored.map((r) => r.ms).filter((m) => typeof m === "number").sort((a, b) => a - b);
+const med = ms.length ? ms[Math.floor(ms.length / 2)] : null;
+console.log(`${scored.length}/${files.length} scored, tta fired on ${scored.filter((r) => r.tta).length}, median inference ${med === null ? "n/a" : med + "ms"} -> ${OUT}`);
