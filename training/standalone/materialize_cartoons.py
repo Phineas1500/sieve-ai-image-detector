@@ -147,6 +147,27 @@ SOURCES = [
      "stride": 4, "train": 6000, "heldout": 600},
     {"prefix": "coco256", "repo": "bitmind/MS-COCO-unique-256", "config": "default",
      "stride": 5, "train": 8000, "heldout": 800},
+    # --- ft10: the audit's remaining gaps (agentatwork #48/#53). FLUX.1-dev is
+    # the one modern generator still missed at 256px, so three FLUX sets:
+    # photoreal COCO-caption renders, face renders, and bm-flux-offline whose
+    # ~11 KB/image renders are natively small. (bm-subnet-weekly-FLUX.1-dev-256
+    # is the auditor's evaluation cluster and is deliberately NOT used.) Reals:
+    # CelebA-HQ faces (CC-BY-4.0), Open Images V7 (the auditor's regressed
+    # real cluster, sampled at ~0.3%), MIT-Adobe FiveK expert-C retouches for
+    # "benignly enhanced" reals (#33). Degraded delivery of these and the
+    # legacy 2021-22 slices is applied at train time (train.py --degrade-view).
+    {"prefix": "flxc", "repo": "bitmind/MS-COCO-unique___FLUX.1-dev", "config": "default",
+     "stride": 12, "train": 8000, "heldout": 800},
+    {"prefix": "flxf", "repo": "bitmind/ffhq-256___FLUX.1-dev", "config": "default",
+     "stride": 12, "train": 5000, "heldout": 500},
+    {"prefix": "flxo", "repo": "bitmind/bm-flux-offline", "config": "default",
+     "stride": 30, "train": 6000, "heldout": 600},
+    {"prefix": "cahq", "repo": "bitmind/celeb-a-hq", "config": "default",
+     "stride": 6, "train": 4500, "heldout": 450},
+    {"prefix": "oiv7", "max_side": 1536, "repo": "bitmind/open-images-v7-subset", "config": "default",
+     "stride": 3, "train": 5000, "heldout": 500},
+    {"prefix": "fivek", "max_side": 1536, "repo": "KlyaT/mit-adobe-fivek", "config": "c",
+     "stride": 1, "train": 1500, "heldout": 150, "img_col": "augmented"},
 ]
 
 # prefix -> (label, source) for manifest rows
@@ -202,6 +223,13 @@ TAXONOMY = {
     "calt": (0, "lowres_real"),
     "coco256": (0, "lowres_real"),
     "press2": (0, "press_photo"),
+    "flxc": (1, "ai_flux_dev"),
+    "flxf": (1, "ai_flux_face"),
+    "flxo": (1, "ai_flux_small"),
+    "cahq": (0, "face_celebahq"),
+    "oiv7": (0, "photo_openimages"),
+    "fivek": (0, "photo_retouched"),
+    "pexl": (0, "photo_pexels"),
 }
 
 

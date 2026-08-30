@@ -96,6 +96,14 @@ def main():
                     help="freeze embeddings + the first N transformer blocks (timm backbones)")
     ap.add_argument("--exclude-sources", default="",
                     help="regex; training items whose source matches are dropped (ablations)")
+    ap.add_argument("--degrade-view", default="",
+                    help="apply the benchmark's web/hard delivery path (resize + JPEG q60/q40) at "
+                         "train time to matching sources with the given probability: comma list of "
+                         "<source-regex>=<p>, e.g. '^(ai_biggan|ai_glide)=0.5'. ft10: the audit found "
+                         "the 2021-22 cohort and faces learned at clean did not transfer to degraded "
+                         "delivery; the standard augmentation alone was not enough for small slices.")
+    ap.add_argument("--init-ckpt", default="",
+                    help="initialise from a training checkpoint (model_state_dict) instead of the HF base")
     ap.add_argument("--boost", default="",
                     help="oversample by source: comma list of <source-regex>=<factor>, e.g. "
                          "'^(ai_nanobanana|ai_gpt_edit|press_photo)$=3'. Applied before fake/real "
@@ -140,6 +148,16 @@ def main():
     n_real = len(train_items) - n_fake
     print(f"train: {len(train_items)} ({n_fake} fake / {n_real} real); val: {len(val_items)}")
 
+    degrade_rules = [(re.compile(k), float(v)) for k, v in
+                     (d.split("=") for d in args.degrade_view.split(",") if d)]
+
+    def degrade_p(source):
+        return max([p_ for pat, p_ in degrade_rules if pat.search(source)] or [0.0])
+
+    if degrade_rules:
+        n_dv = sum(1 for it in train_items if degrade_p(it.get("source", "")) > 0)
+        print(f"degrade-view: {n_dv} items eligible ({args.degrade_view})")
+
     class TrainDS(Dataset):
         def __len__(self):
             return len(train_items)
@@ -149,6 +167,9 @@ def main():
             rng = pyrandom.Random((hash(it["path"]) ^ pyrandom.getrandbits(32)) & 0xFFFFFFFF)
             try:
                 img = Image.open(it["path"]).convert("RGB")
+                dv = degrade_p(it.get("source", "")) if degrade_rules else 0.0
+                if dv and rng.random() < dv:
+                    img = _degrade(img, "hard" if rng.random() < 0.5 else "web")
                 img = _train_augment(img, rng, C, resize_size, args.thumb_p)
                 return norm(transforms.functional.to_tensor(img)), float(it["label"])
             except Exception:
@@ -189,6 +210,10 @@ def main():
     vdl = DataLoader(ValDS(), batch_size=128, num_workers=args.num_workers, pin_memory=True)
 
     model = build(args.backbone, hf_repo=args.hf_repo).cuda()
+    if args.init_ckpt:
+        sd0 = torch.load(args.init_ckpt, map_location="cpu")
+        model.load_state_dict(sd0.get("model_state_dict", sd0))
+        print(f"init-ckpt: {args.init_ckpt} (step {sd0.get('step')}, val {sd0.get('val')})")
     if args.freeze_blocks:
         nfrozen = freeze_blocks(model, args.freeze_blocks)
         print(f"backbone {args.backbone}: froze {nfrozen} param tensors (first {args.freeze_blocks} blocks + embeddings)")
