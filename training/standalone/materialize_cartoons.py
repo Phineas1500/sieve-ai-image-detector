@@ -307,9 +307,10 @@ def ingest(spec):
                     if (seen - 1) % spec["stride"]:
                         continue
                 else:
-                    tval = data[spec["text_col"]][i].as_py()
-                    if text_re and not text_re.search("" if tval is None else str(tval)):
-                        continue
+                    if text_re:
+                        tval = data[spec["text_col"]][i].as_py()
+                        if not text_re.search("" if tval is None else str(tval)):
+                            continue
                     seen += 1
                     if (seen - 1) % spec["stride"]:
                         continue
