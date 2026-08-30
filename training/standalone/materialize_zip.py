@@ -23,10 +23,11 @@ SOURCES = [
     {"prefix": "ideo", "repo": "bitmind/ideogram-27k", "file": "ideogram-27k.zip",
      "member_re": r"\.(jpe?g|png|webp)$", "stride": 2, "train": 6000, "heldout": 600},
     # ft10: CC0 Pexels photography at 768p (lifestyle / smartphone-look reals,
-    # the clean-photo-fp category); the zip also carries depth maps, excluded.
+    # the clean-photo-fp category). Despite the name the zip holds only the
+    # photos (109,971 JPEGs under images/) plus an attributes json.
     {"prefix": "pexl", "repo": "cj-mills/pexels-110k-768p-min-jpg-depth-anything-large-hf",
      "file": "pexels-110k-768p-min-jpg-depth-anything-large-hf.zip",
-     "member_re": r"^(?!.*depth).*\.jpe?g$", "stride": 12, "train": 8000, "heldout": 800},
+     "member_re": r"/images/.*\.jpe?g$", "stride": 12, "train": 8000, "heldout": 800},
 ]
 
 
