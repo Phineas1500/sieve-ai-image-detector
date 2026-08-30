@@ -226,7 +226,9 @@
     st.badge.classList.toggle("aid-degraded", st.degraded && score >= thr);
     st.badge.classList.toggle("aid-quiet", !flagged && settings.badgeDisplay === "flags");
     st.badge.title = flagged
-      ? `Likely AI-generated (confidence ${pct}%). Click to toggle blur.`
+      ? (score < thr + 0.10
+          ? `Likely AI-generated (confidence ${pct}% — near the ${Math.round(thr * 100)}% threshold: about 1 in 8 verdicts in this band are wrong on our benchmark). Click to toggle blur.`
+          : `Likely AI-generated (confidence ${pct}%). Click to toggle blur.`)
       : st.degraded && score >= thr
         ? `Low-quality input (heavy recompression or upscaling) — AI confidence ${pct}%, shown as unsure because degraded images are not evidence-backed`
         : isUnsure
