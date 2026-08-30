@@ -4,6 +4,7 @@
 // opposed to tools/pil_score.py, which is the single-view reference pipeline.
 //
 //   node score-dir.mjs --model ../../dev_model/ft5s_best_fp16.onnx --bias 0.42 --dir ../../dev_model/ft5_results/reported --out scores_ft5s.json
+//   add --size 224 --resize 256 for a 224px backbone (patches the manifest for the run, restored on exit)
 import http from "node:http";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join, resolve, dirname } from "node:path";
@@ -45,6 +46,7 @@ const port = server.address().port;
 const origManifest = readFileSync(MANIFEST, "utf8");
 const patched = JSON.parse(origManifest);
 patched.calibration.bias = BIAS;
+if (args.size) { patched.input_size = Number(args.size); patched.resize_shorter_side = Number(args.resize || Math.round(Number(args.size) * 440 / 384)); }
 writeFileSync(MANIFEST, JSON.stringify(patched, null, 2));
 
 const browser = await puppeteer.launch({

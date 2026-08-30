@@ -22,7 +22,7 @@
     if (area !== "sync") return;
     for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
     // re-apply threshold to existing results
-    for (const [img, st] of badges) applyResult(img, st.score);
+    for (const [img, st] of badges) { if (st.na) applyNotAnalysed(img, st.na); else applyResult(img, st.score, st.degraded); }
   });
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -158,43 +158,83 @@
     badge.style.left = `${window.scrollX + r.left + 6}px`;
   }
 
-  function applyResult(img, score) {
+  // A verdict is "flagged" only when the score clears the threshold AND the
+  // input wasn't delivered in a degraded regime (heavy recompression or
+  // upscaling — audit #41/#42), where a red badge would not be evidence-backed.
+  function isFlagged(st) {
+    return typeof st.score === "number" && st.score >= settings.threshold && !st.degraded;
+  }
+
+  function ensureBadge(img) {
     let st = badges.get(img);
-    if (!st) {
-      const badge = document.createElement("div");
-      badge.className = "aid-badge";
-      badge.addEventListener("click", (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        // clicking a blurred image reveals it; clicking a revealed one re-blurs
-        st.revealed = img.classList.contains("aid-blurred");
-        syncVisualState(img, st, st.score >= settings.threshold, "blur");
-      });
-      document.documentElement.appendChild(badge);
-      st = { badge, score, revealed: false, action: null, targets: [] };
-      badges.set(img, st);
-    }
-    st.score = score;
+    if (st) return st;
+    const badge = document.createElement("div");
+    badge.className = "aid-badge";
+    badge.addEventListener("click", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      // clicking a blurred image reveals it; clicking a revealed one re-blurs
+      st.revealed = img.classList.contains("aid-blurred");
+      syncVisualState(img, st, isFlagged(st), "blur");
+    });
+    document.documentElement.appendChild(badge);
+    st = { badge, score: null, degraded: false, na: null, revealed: false, action: null, targets: [] };
+    badges.set(img, st);
+    return st;
+  }
+
+  // Three states used to look identical (no badge): not reached yet, analysed
+  // and clean, and not analysable. A quiet grey chip separates the last one
+  // (audit #49). Only in the "all badges" display mode.
+  const NA_TEXT = {
+    "too-small": "Image too small to analyse",
+    "degenerate-flat": "Flat / solid image — nothing to analyse",
+    "degenerate-noise": "Noise-like image — nothing to analyse",
+    "error": "Analysis failed repeatedly (see the extension log)",
+  };
+  function applyNotAnalysed(img, reason) {
+    const st = ensureBadge(img);
+    st.na = reason; st.score = null; st.degraded = false;
+    delete img.dataset.aidScore;
+    img.dataset.aidNa = reason; // diagnostics/tests
+    st.badge.textContent = "not analysed";
+    st.badge.className = "aid-badge aid-na";
+    st.badge.title = NA_TEXT[reason] || NA_TEXT.error;
+    st.badge.classList.toggle("aid-quiet", settings.badgeDisplay === "flags");
+    syncVisualState(img, st, false, effectiveFlaggedAction());
+    positionBadge(img, st.badge);
+  }
+
+  function applyResult(img, score, degraded = false) {
+    const st = ensureBadge(img);
+    st.score = score; st.degraded = !!degraded; st.na = null;
+    delete img.dataset.aidNa;
     img.dataset.aidScore = String(score); // exact score, for tests/tooling
+    img.dataset.aidDegraded = String(!!degraded);
     const pct = Math.round(score * 100);
     const thr = settings.threshold;
-    const isAI = score >= thr;
+    const flagged = isFlagged(st);
     // Above 50% the model leans AI even when below the flag threshold —
     // show that honestly instead of a bare number that reads as "safe".
-    const isUnsure = !isAI && score >= 0.5;
-    st.badge.textContent = isAI ? `AI ${pct}%` : isUnsure ? `unsure ${pct}%` : `${pct}%`;
-    st.badge.classList.toggle("aid-flagged", isAI);
+    // A degraded input that clears the threshold is shown as unsure too.
+    const isUnsure = !flagged && (score >= 0.5 || (score >= thr && st.degraded));
+    st.badge.textContent = flagged ? `AI ${pct}%` : isUnsure ? `unsure ${pct}%` : `${pct}%`;
+    st.badge.className = "aid-badge";
+    st.badge.classList.toggle("aid-flagged", flagged);
     st.badge.classList.toggle("aid-unsure", isUnsure);
-    st.badge.classList.toggle("aid-quiet", !isAI && settings.badgeDisplay === "flags");
-    st.badge.title = isAI
+    st.badge.classList.toggle("aid-degraded", st.degraded && score >= thr);
+    st.badge.classList.toggle("aid-quiet", !flagged && settings.badgeDisplay === "flags");
+    st.badge.title = flagged
       ? `Likely AI-generated (confidence ${pct}%). Click to toggle blur.`
-      : isUnsure
-        ? `Uncertain — AI confidence ${pct}%, below the ${Math.round(thr * 100)}% flag threshold`
-        : `Likely real (AI confidence ${pct}%)`;
+      : st.degraded && score >= thr
+        ? `Low-quality input (heavy recompression or upscaling) — AI confidence ${pct}%, shown as unsure because degraded images are not evidence-backed`
+        : isUnsure
+          ? `Uncertain — AI confidence ${pct}%, below the ${Math.round(thr * 100)}% flag threshold`
+          : `Likely real (AI confidence ${pct}%)`;
     const act = effectiveFlaggedAction();
     if (st.action !== act) st.revealed = false;
     st.action = act;
-    syncVisualState(img, st, isAI, act);
+    syncVisualState(img, st, flagged, act);
     positionBadge(img, st.badge);
   }
 
@@ -213,15 +253,17 @@
       const resp = await chrome.runtime.sendMessage({ kind: "aid:analyze", url });
       if (resp && typeof resp.score === "number") {
         analyzedCount++;
-        if (resp.score >= settings.threshold) flaggedCount++;
+        if (resp.score >= settings.threshold && !resp.degraded) flaggedCount++;
         failures.delete(img);
         img.dataset.aidTta = String(!!resp.tta); // diagnostics/tests
         if (typeof resp.ms === "number") img.dataset.aidMs = String(resp.ms); // inference time, for latency tests
-        applyResult(img, resp.score);
-      } else if (resp && resp.error && !permanentError(resp.error)) {
+        applyResult(img, resp.score, !!resp.degraded);
+      } else if (resp && resp.error && permanentError(resp.error)) {
+        applyNotAnalysed(img, String(resp.error));
+      } else if (resp && resp.error) {
         // Transient failure (fetch hiccup, GPU glitch): without a retry the
         // image stays in `seen` and is silently never analyzed again.
-        scheduleRetry(img);
+        if (!scheduleRetry(img)) applyNotAnalysed(img, "error");
       }
     } catch {
       // service worker restarting; will retry on next intersection
@@ -238,11 +280,12 @@
   function scheduleRetry(img) {
     const n = (failures.get(img) || 0) + 1;
     failures.set(img, n);
-    if (n > 3) return; // give up: three strikes with backoff
+    if (n > 3) return false; // give up: three strikes with backoff
     setTimeout(() => {
       seen.delete(img);
       if (img.isConnected && fetchable(img)) analyze(img);
     }, 3000 * n);
+    return true;
   }
 
   const io = new IntersectionObserver(
@@ -282,7 +325,7 @@
             continue;
           }
           const stAction = effectiveFlaggedAction();
-          syncVisualState(img, st, st.score >= settings.threshold, stAction);
+          syncVisualState(img, st, isFlagged(st), stAction);
           positionBadge(img, st.badge);
         }
         ticking = false;

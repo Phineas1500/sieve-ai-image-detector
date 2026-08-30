@@ -73,17 +73,26 @@ const server = http.createServer((req, res) => {
   if (url === "/") {
     const proxy = new URL(req.url, "http://localhost").searchParams.get("proxy") === "1";
     res.writeHead(200, { "content-type": "text/html" });
+    const degraded = new URL(req.url, "http://localhost").searchParams.get("degraded") === "1"
+      ? ["deepfry_fake.jpg", "up64_real.jpg"].map((f) =>
+          `<img class="degraded" src="/dg/${f}" style="display:block;max-width:480px;margin:16px">`).join("")
+      : "";
     const degen = new URL(req.url, "http://localhost").searchParams.get("degen") === "1"
       ? Object.keys(DEGEN).map((f) =>
           `<img class="degen" src="/degen/${f}" style="display:block;width:256px;height:256px;margin:16px">`).join("")
       : "";
-    const images = degen + files.map((f) => proxy
+    const images = degraded + degen + files.map((f) => proxy
       ? `<div class="aid-proxy" style="position:relative;width:480px;height:360px;margin:16px;overflow:hidden">` +
         `<div data-aid-background style="position:absolute;inset:0;background:center/cover no-repeat url('/img/${encodeURIComponent(f)}')"></div>` +
         `<img src="/img/${encodeURIComponent(f)}" style="position:absolute;inset:0;width:100%;height:100%;opacity:0">` +
         `</div>`
       : `<img src="/img/${encodeURIComponent(f)}" style="display:block;max-width:480px;margin:16px">`).join("");
     res.end(`<!doctype html><meta charset="utf-8"><title>modes</title>${images}`);
+  } else if (url.startsWith("/dg/")) {
+    try {
+      res.writeHead(200, { "content-type": "image/jpeg" });
+      res.end(readFileSync(join(here, "degraded_samples", url.slice(4))));
+    } catch { res.writeHead(404).end(); }
   } else if (url.startsWith("/degen/")) {
     const buf = DEGEN[url.slice(7)];
     if (buf) { res.writeHead(200, { "content-type": "image/png" }); res.end(buf); }
@@ -208,9 +217,33 @@ try {
   const degenAudit = await page.evaluate(() => ({
     total: document.querySelectorAll("img.degen").length,
     scored: document.querySelectorAll("img.degen[data-aid-score]").length,
+    na: document.querySelectorAll("img.degen[data-aid-na]").length,
+    chips: [...document.querySelectorAll(".aid-badge.aid-na")].filter((b) => b.textContent === "not analysed").length,
   }));
   check("degenerate inputs: no verdict badged", degenAudit.total === 2 && degenAudit.scored === 0,
     `${degenAudit.scored}/${degenAudit.total} scored`);
+  check("degenerate inputs: 'not analysed' chip shown (#49)", degenAudit.na === 2 && degenAudit.chips >= 2,
+    `${degenAudit.na} marked, ${degenAudit.chips} chips`);
+  await page.close();
+
+  // --- degraded delivery (deep-fried / upscaled-thumbnail input) is never
+  // flagged red: shown as unsure with the degraded marker (#41/#42)
+  page = await visit(false, "&degraded=1");
+  await page.waitForFunction(() => document.querySelectorAll("img.degraded[data-aid-score]").length >= 2,
+    { timeout: 120000, polling: 500 });
+  const dgAudit = await page.evaluate(() => [...document.querySelectorAll("img.degraded")].map((i) => ({
+    src: i.getAttribute("src").split("/").pop(), score: +i.dataset.aidScore, degraded: i.dataset.aidDegraded,
+  })));
+  const flaggedDegraded = await page.evaluate(() => [...document.querySelectorAll("img.degraded")].map((i) => {
+    const r = i.getBoundingClientRect();
+    const b = [...document.querySelectorAll(".aid-badge")].find((b) =>
+      Math.abs(parseFloat(b.style.top) - (scrollY + r.top + 6)) < 2 && Math.abs(parseFloat(b.style.left) - (scrollX + r.left + 6)) < 2);
+    return b ? { text: b.textContent, flagged: b.classList.contains("aid-flagged"), degraded: b.classList.contains("aid-degraded") } : null;
+  }));
+  check("degraded inputs: detected as degraded", dgAudit.every((d) => d.degraded === "true"),
+    dgAudit.map((d) => `${d.src}:${d.score.toFixed(2)}/${d.degraded}`).join(" "));
+  check("degraded inputs: never flagged red", flaggedDegraded.every((b) => b && !b.flagged),
+    flaggedDegraded.map((b) => b && b.text).join(" | "));
   await page.close();
 
   // --- manual mode: nothing scored automatically

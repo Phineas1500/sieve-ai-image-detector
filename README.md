@@ -21,6 +21,9 @@ COCO val2017 + OpenFake reals. Scored at the fixed **0.65** confidence threshold
 | web (≤768px, JPEG q60) | **87.5%** | 78.8% | 96.2% |
 | hard (≤512px, JPEG q40) | **86.2%** | 77.3% | 95.0% |
 
+Per-category real-photo accuracy and AI recall on the held-out slices (with
+faces as their own rows) is published in [docs/accuracy-v0.12.md](docs/accuracy-v0.12.md).
+
 For reference, the stock Community Forensics base model scores 75.8 / 65.9 / 56.5
 under the same protocol (its detection rate on GPT Image 2 is 7%; ours is >90%).
 Inference: ~91ms/image end-to-end (WebGPU, Apple Silicon), ~30ms model time.
@@ -62,8 +65,17 @@ measured failure modes.
   (each itself an average of two identically trained runs), which
   stabilizes borderline scores and lets a new data round add coverage
   without giving back the previous round's accuracy.
-- Borderline images (calibrated 25–85%) get a second, native-resolution
-  inference pass (selective TTA) and average the two views.
+- Borderline images (calibrated 25–85%) get a second inference pass
+  (selective TTA) and average the two views: a native-resolution crop for
+  large images, a scale-jittered view for images below the crop size
+  (thumbnails and avatars, the regime where single-view scores are least
+  reliable).
+- Inputs delivered in a degraded regime — heavy recompression (JPEG block
+  energy far beyond q40) or content upscaled far beyond its true resolution —
+  are never flagged red: a verdict there isn't evidence-backed, so the badge
+  shows **unsure** with the reason. Images that can't be analysed at all (too
+  small, flat fills, noise) get a quiet grey **not analysed** chip instead of
+  silence.
 - Every analyzed image gets a confidence badge: red **AI n%** at or above the
   threshold (default **65%**, optionally blurred — click to toggle), amber
   **unsure n%** just below it, quiet gray otherwise.
@@ -134,7 +146,9 @@ training/standalone/  dataset materializers, fine-tune, soup, eval, ONNX export
 training/vendor/      Community Forensics model code (MIT, J. Park)
 eval/e2e/             browser end-to-end suites: scoring harness, badge/mode/
                       leak/update tests, PIL-parity regression
-tools/                report mining (GitHub issue parser + labeling), PIL reference scorer
+tools/                report mining (GitHub issue parser + labeling), PIL reference
+                      scorer, per-category accuracy table
+docs/                 per-release accuracy-by-category tables
 ```
 
 ## License

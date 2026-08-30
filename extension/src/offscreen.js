@@ -317,6 +317,57 @@ function preprocess(img, meta) {
 
 // TTA view: native-resolution center crop — no resampling, preserves the
 // pixel-grid artifacts the standard resized view destroys.
+// Second view for images below the native-crop size: scale the shorter side
+// straight to the crop size (a 440/384 scale jitter vs. the standard view)
+// instead of skipping TTA entirely in the regime where the model is weakest
+// (audit #48: profile pictures / thumbnails).
+function preprocessFit(img, meta) {
+  const C = meta.input_size;
+  const scale = C / Math.min(img.width, img.height);
+  const rw = Math.max(C, Math.round(img.width * scale));
+  const rh = Math.max(C, Math.round(img.height * scale));
+  const resized = resamplePIL(img, rw, rh);
+  const data = cropRGBA(resized, Math.floor((rw - C) / 2), Math.floor((rh - C) / 2), C);
+  return imageDataToTensor(data, C, meta);
+}
+
+// Delivery-degradation estimate on the decoded pixels (audit #41/#42): heavy
+// recompression shows as energy piling up on the 8px JPEG block grid
+// (blockiness ~1.0 for clean, ~1.4 at q40, >2 when "deep-fried"); content
+// upscaled far beyond its true resolution shows as near-zero high-frequency
+// energy (Laplacian variance / global variance; clean photos 0.1-1.4, a 64px
+// image blown up to full size ~0.003). Either regime is one where a verdict
+// is not evidence-backed, so the badge shows "unsure" instead of "AI".
+function degradationStats(img) {
+  const { data, width, height } = img;
+  if (width < 24 || height < 24) return { block: 1, hf: 1 };
+  const L = (i) => 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  const sy = Math.max(1, Math.floor(height / 192));
+  let dxAll = 0, dxN = 0, dxB = 0, dxBN = 0, dyAll = 0, dyN = 0, dyB = 0, dyBN = 0;
+  let lapS = 0, lapS2 = 0, lapN = 0, gS = 0, gS2 = 0, gN = 0;
+  for (let y = 1; y < height - 1; y += sy) {
+    const row = y * width * 4, up = (y - 1) * width * 4, dn = (y + 1) * width * 4;
+    let prev = L(row);
+    for (let x = 1; x < width - 1; x++) {
+      const i = row + x * 4;
+      const c = L(i), r = L(i + 4), u = L(up + x * 4), d = L(dn + x * 4);
+      const dx = Math.abs(r - c), dy = Math.abs(d - c);
+      dxAll += dx; dxN++; dyAll += dy; dyN++;
+      if (x % 8 === 7) { dxB += dx; dxBN++; }
+      if (y % 8 === 7) { dyB += dy; dyBN++; }
+      const lap = 4 * c - prev - r - u - d;
+      lapS += lap; lapS2 += lap * lap; lapN++;
+      gS += c; gS2 += c * c; gN++;
+      prev = c;
+    }
+  }
+  const bx = dxBN ? (dxB / dxBN) / (dxAll / dxN + 1e-6) : 1;
+  const by = dyBN ? (dyB / dyBN) / (dyAll / dyN + 1e-6) : 1;
+  const lapVar = lapS2 / lapN - (lapS / lapN) ** 2;
+  const gVar = gS2 / gN - (gS / gN) ** 2;
+  return { block: (bx + by) / 2, hf: lapVar / (gVar + 1e-6) };
+}
+
 function preprocessNative(img, meta) {
   const C = meta.input_size;
   const data = cropRGBA(img, Math.floor((img.width - C) / 2), Math.floor((img.height - C) / 2), C);
@@ -378,6 +429,8 @@ async function infer(url) {
     if (img.width < 32 || img.height < 32) throw new Error("too-small");
     const degen = degenerateReason(img);
     if (degen) throw new Error(`degenerate-${degen}`);
+    const dq = degradationStats(img);
+    const degraded = dq.block >= 1.8 || dq.hf < 0.01;
     const input = preprocess(img, modelMeta);
 
     const runLogit = (tensor) =>
@@ -388,26 +441,32 @@ async function infer(url) {
     // the image is large enough for a native crop, average raw logits with a
     // second, resampling-free view (measured: +0.9/+0.5/+0.3 balanced acc).
     let tta = false;
+    let msModel = 0;
     const task = async () => {
+      const t1 = performance.now();
       const zStd = await runLogit(input);
       const cfg = modelMeta.tta || {};
       const C = modelMeta.input_size;
       let z = zStd;
       if (cfg.enabled) {
         const s = calibrate(zStd, modelMeta);
-        if (s >= cfg.band_lo && s <= cfg.band_hi &&
-            Math.min(img.width, img.height) >= (cfg.min_side || C)) {
-          const zNative = await runLogit(preprocessNative(img, modelMeta));
-          z = (zStd + zNative) / 2;
+        if (s >= cfg.band_lo && s <= cfg.band_hi) {
+          const large = Math.min(img.width, img.height) >= (cfg.min_side || C);
+          const z2 = await runLogit(large ? preprocessNative(img, modelMeta) : preprocessFit(img, modelMeta));
+          z = (zStd + z2) / 2;
           tta = true;
         }
       }
+      msModel = Math.round(performance.now() - t1);
       return calibrate(z, modelMeta);
     };
     const p = chain.then(task, task);
     chain = p.then(() => {}, () => {});
     const score = await p;
-    return { ok: true, score, ms: Math.round(performance.now() - t0), ep, tta };
+    // ms = model time (both views when TTA fires); msTotal includes fetch,
+    // decode and time spent queued behind other images
+    return { ok: true, score, ms: msModel, msTotal: Math.round(performance.now() - t0), ep, tta, degraded,
+             quality: { block: +dq.block.toFixed(3), hf: +dq.hf.toFixed(4) } };
   }
 }
 

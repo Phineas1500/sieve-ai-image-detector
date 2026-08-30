@@ -125,7 +125,7 @@ await page.waitForFunction(
 const elapsed = Date.now() - t0;
 
 const results = await page.$$eval("img[data-aid-score]", (imgs) =>
-  imgs.map((img) => ({ file: img.dataset.file, score: Number(img.dataset.aidScore) }))
+  imgs.map((img) => ({ file: img.dataset.file, score: Number(img.dataset.aidScore), tta: img.dataset.aidTta === "true" }))
 );
 console.log(`analyzed ${results.length} images in ${(elapsed / 1000).toFixed(1)}s (${(elapsed / results.length).toFixed(0)}ms/img incl. queueing)`);
 for (const r of results) console.log(`  ${r.score.toFixed(4)}  ${r.file}`);
@@ -158,7 +158,7 @@ if (expected.unsure === 0) {
 const ttaAudit = await page.$$eval("img[data-aid-score]", (imgs) =>
   imgs.map((img) => ({
     file: img.dataset.file,
-    score: Number(img.dataset.aidScore),
+    score: Number(img.dataset.aidScore), tta: img.dataset.aidTta === "true",
     tta: img.dataset.aidTta === "true",
     minSide: Math.min(img.naturalWidth, img.naturalHeight),
   }))

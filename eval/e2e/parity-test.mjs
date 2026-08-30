@@ -10,11 +10,14 @@ const ref = JSON.parse(readFileSync(new URL(`./pil_reference_${model}.json`, imp
 const pil = Object.fromEntries(ref.sample_images.map((r) => [r.file, r.score]));
 const ext = JSON.parse(readFileSync(new URL("./scores.json", import.meta.url)));
 
-const ds = ext.filter((r) => r.file in pil).map((r) => ({ f: r.file, d: Math.abs(r.score - pil[r.file]) }));
+// TTA'd images average a second view, so they differ from the single-view
+// PIL reference by design; parity is about the standard view only.
+const ds = ext.filter((r) => r.file in pil && !r.tta).map((r) => ({ f: r.file, d: Math.abs(r.score - pil[r.file]) }));
+const skipped = ext.filter((r) => r.file in pil && r.tta).length;
 const mean = ds.reduce((a, x) => a + x.d, 0) / ds.length;
 const worst = ds.reduce((a, x) => (x.d > a.d ? x : a));
 // TTA-band images legitimately differ (the extension averages a second view);
 // bounds are set to catch pipeline drift, not TTA.
 const ok = mean < 0.03 && worst.d < 0.2;
-console.log(`${ok ? "PASS" : "FAIL"}  preprocessing parity vs PIL (n=${ds.length} mean|d|=${mean.toFixed(4)} max|d|=${worst.d.toFixed(4)} @ ${worst.f})`);
+console.log(`${ok ? "PASS" : "FAIL"}  preprocessing parity vs PIL (n=${ds.length}, ${skipped} TTA'd excluded; mean|d|=${mean.toFixed(4)} max|d|=${worst.d.toFixed(4)} @ ${worst.f})`);
 process.exit(ok ? 0 : 1);

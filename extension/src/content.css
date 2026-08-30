@@ -22,6 +22,17 @@
   color: #fff;
 }
 
+.aid-badge.aid-degraded {
+  border: 1px dashed rgba(255, 255, 255, 0.7);
+}
+
+.aid-badge.aid-na {
+  background: rgba(90, 90, 90, 0.6);
+  color: #ddd;
+  font-weight: 500;
+  cursor: default;
+}
+
 .aid-blurred {
   filter: blur(18px) saturate(0.6) !important;
 }
