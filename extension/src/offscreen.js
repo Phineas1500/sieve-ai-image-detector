@@ -334,38 +334,39 @@ function preprocessFit(img, meta) {
 // Delivery-degradation estimate on the decoded pixels (audit #41/#42): heavy
 // recompression shows as energy piling up on the 8px JPEG block grid
 // (blockiness ~1.0 for clean, ~1.4 at q40, >2 when "deep-fried"); content
-// upscaled far beyond its true resolution shows as near-zero high-frequency
-// energy (Laplacian variance / global variance; clean photos 0.1-1.4, a 64px
-// image blown up to full size ~0.003). Either regime is one where a verdict
-// is not evidence-backed, so the badge shows "unsure" instead of "AI".
+// upscaled far beyond its true resolution has no pixel-scale texture left,
+// which shows as the mean 1px luma step falling to ~half the mean 2px step
+// (d12 ~0.50 for anything interpolated up, 0.55-0.9 for native images).
+// d12 replaced a Laplacian-energy ratio before v0.13.0 shipped: mean
+// high-frequency energy could not tell an upscaled thumbnail from a smooth
+// native AI render (19% of as-posted reddit AI images tripped it), while d12
+// at 0.528 trips ~1% of native images and catches 99% of 64px and ~80% of
+// 128px bicubic upscales (tools/upscale_metric_scan.py). Either regime is
+// one where a verdict is not evidence-backed, so the badge shows "unsure"
+// instead of "AI".
 function degradationStats(img) {
   const { data, width, height } = img;
-  if (width < 24 || height < 24) return { block: 1, hf: 1 };
+  if (width < 24 || height < 24) return { block: 1, d12: 1 };
   const L = (i) => 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
   const sy = Math.max(1, Math.floor(height / 192));
-  let dxAll = 0, dxN = 0, dxB = 0, dxBN = 0, dyAll = 0, dyN = 0, dyB = 0, dyBN = 0;
-  let lapS = 0, lapS2 = 0, lapN = 0, gS = 0, gS2 = 0, gN = 0;
+  let dxAll = 0, dxN = 0, dxB = 0, dxBN = 0, dyAll = 0, dyN = 0, dyB = 0, dyBN = 0, d2All = 0;
   for (let y = 1; y < height - 1; y += sy) {
-    const row = y * width * 4, up = (y - 1) * width * 4, dn = (y + 1) * width * 4;
+    const row = y * width * 4, dn = (y + 1) * width * 4;
     let prev = L(row);
     for (let x = 1; x < width - 1; x++) {
       const i = row + x * 4;
-      const c = L(i), r = L(i + 4), u = L(up + x * 4), d = L(dn + x * 4);
+      const c = L(i), r = L(i + 4), d = L(dn + x * 4);
       const dx = Math.abs(r - c), dy = Math.abs(d - c);
       dxAll += dx; dxN++; dyAll += dy; dyN++;
+      d2All += Math.abs(r - prev);
       if (x % 8 === 7) { dxB += dx; dxBN++; }
       if (y % 8 === 7) { dyB += dy; dyBN++; }
-      const lap = 4 * c - prev - r - u - d;
-      lapS += lap; lapS2 += lap * lap; lapN++;
-      gS += c; gS2 += c * c; gN++;
       prev = c;
     }
   }
   const bx = dxBN ? (dxB / dxBN) / (dxAll / dxN + 1e-6) : 1;
   const by = dyBN ? (dyB / dyBN) / (dyAll / dyN + 1e-6) : 1;
-  const lapVar = lapS2 / lapN - (lapS / lapN) ** 2;
-  const gVar = gS2 / gN - (gS / gN) ** 2;
-  return { block: (bx + by) / 2, hf: lapVar / (gVar + 1e-6) };
+  return { block: (bx + by) / 2, d12: (dxAll / dxN) / (d2All / dxN + 1e-6) };
 }
 
 function preprocessNative(img, meta) {
@@ -430,7 +431,7 @@ async function infer(url) {
     const degen = degenerateReason(img);
     if (degen) throw new Error(`degenerate-${degen}`);
     const dq = degradationStats(img);
-    const degraded = dq.block >= 1.8 || dq.hf < 0.01;
+    const degraded = dq.block >= 1.8 || dq.d12 < 0.528;
     const input = preprocess(img, modelMeta);
 
     const runLogit = (tensor) =>
@@ -450,8 +451,10 @@ async function infer(url) {
       let z = zStd;
       if (cfg.enabled) {
         const s = calibrate(zStd, modelMeta);
-        if (s >= cfg.band_lo && s <= cfg.band_hi) {
-          const large = Math.min(img.width, img.height) >= (cfg.min_side || C);
+        const large = Math.min(img.width, img.height) >= (cfg.min_side || C);
+        // small_view:false restores the pre-v0.13 behaviour (no second view
+        // below min_side) — kept as a manifest switch for A/B measurement
+        if (s >= cfg.band_lo && s <= cfg.band_hi && (large || cfg.small_view !== false)) {
           const z2 = await runLogit(large ? preprocessNative(img, modelMeta) : preprocessFit(img, modelMeta));
           z = (zStd + z2) / 2;
           tta = true;
@@ -466,7 +469,7 @@ async function infer(url) {
     // ms = model time (both views when TTA fires); msTotal includes fetch,
     // decode and time spent queued behind other images
     return { ok: true, score, ms: msModel, msTotal: Math.round(performance.now() - t0), ep, tta, degraded,
-             quality: { block: +dq.block.toFixed(3), hf: +dq.hf.toFixed(4) } };
+             quality: { block: +dq.block.toFixed(3), d12: +dq.d12.toFixed(4) } };
   }
 }
 

@@ -69,11 +69,13 @@ measured failure modes.
   (selective TTA) and average the two views: a native-resolution crop for
   large images, a scale-jittered view for images below the crop size
   (thumbnails and avatars, the regime where single-view scores are least
-  reliable).
+  reliable — measured effect on 2,400 small held-out images is within ±0.6
+  points, see [docs/degradation-gate.md](docs/degradation-gate.md)).
 - Inputs delivered in a degraded regime — heavy recompression (JPEG block
   energy far beyond q40) or content upscaled far beyond its true resolution —
   are never flagged red: a verdict there isn't evidence-backed, so the badge
-  shows **unsure** with the reason. Images that can't be analysed at all (too
+  shows **unsure** with the reason (how the gate is calibrated and why:
+  [docs/degradation-gate.md](docs/degradation-gate.md)). Images that can't be analysed at all (too
   small, flat fills, noise) get a quiet grey **not analysed** chip instead of
   silence.
 - Every analyzed image gets a confidence badge: red **AI n%** at or above the

@@ -47,6 +47,7 @@ const origManifest = readFileSync(MANIFEST, "utf8");
 const patched = JSON.parse(origManifest);
 patched.calibration.bias = BIAS;
 if (args.size) { patched.input_size = Number(args.size); patched.resize_shorter_side = Number(args.resize || Math.round(Number(args.size) * 440 / 384)); }
+if (args["no-small-tta"]) patched.tta = { ...(patched.tta || {}), small_view: false };
 writeFileSync(MANIFEST, JSON.stringify(patched, null, 2));
 
 const browser = await puppeteer.launch({
@@ -73,7 +74,7 @@ try {
   await new Promise((r) => setTimeout(r, 1500));
   Object.assign(results, await page.evaluate(() => Object.fromEntries(
     [...document.querySelectorAll("img[data-file]")].map((i) => [i.dataset.file,
-      i.dataset.aidScore === undefined ? null : { score: +i.dataset.aidScore, tta: i.dataset.aidTta === "true", ms: i.dataset.aidMs === undefined ? null : +i.dataset.aidMs }]))));
+      i.dataset.aidScore === undefined ? null : { score: +i.dataset.aidScore, tta: i.dataset.aidTta === "true", ms: i.dataset.aidMs === undefined ? null : +i.dataset.aidMs, degraded: i.dataset.aidDegraded === "true", quality: i.dataset.aidQuality ? JSON.parse(i.dataset.aidQuality) : null }]))));
 } finally {
   writeFileSync(MANIFEST, origManifest);
   await browser.close();

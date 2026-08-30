@@ -22,7 +22,7 @@
     if (area !== "sync") return;
     for (const [k, v] of Object.entries(changes)) settings[k] = v.newValue;
     // re-apply threshold to existing results
-    for (const [img, st] of badges) { if (st.na) applyNotAnalysed(img, st.na); else applyResult(img, st.score, st.degraded); }
+    for (const [img, st] of badges) { if (st.na) applyNotAnalysed(img, st.na); else applyResult(img, st.score, st.degraded, st.quality); }
   });
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -205,12 +205,13 @@
     positionBadge(img, st.badge);
   }
 
-  function applyResult(img, score, degraded = false) {
+  function applyResult(img, score, degraded = false, quality = null) {
     const st = ensureBadge(img);
-    st.score = score; st.degraded = !!degraded; st.na = null;
+    st.score = score; st.degraded = !!degraded; st.quality = quality; st.na = null;
     delete img.dataset.aidNa;
     img.dataset.aidScore = String(score); // exact score, for tests/tooling
     img.dataset.aidDegraded = String(!!degraded);
+    if (quality) img.dataset.aidQuality = JSON.stringify(quality); else delete img.dataset.aidQuality; // {block, d12}, for tests/tooling
     const pct = Math.round(score * 100);
     const thr = settings.threshold;
     const flagged = isFlagged(st);
@@ -257,7 +258,7 @@
         failures.delete(img);
         img.dataset.aidTta = String(!!resp.tta); // diagnostics/tests
         if (typeof resp.ms === "number") img.dataset.aidMs = String(resp.ms); // inference time, for latency tests
-        applyResult(img, resp.score, !!resp.degraded);
+        applyResult(img, resp.score, !!resp.degraded, resp.quality || null);
       } else if (resp && resp.error && permanentError(resp.error)) {
         applyNotAnalysed(img, String(resp.error));
       } else if (resp && resp.error) {
