@@ -1,87 +1,87 @@
 [
   {
     "file": "000000573943.jpg",
-    "score": 0.15017832334471135,
-    "tta": false
+    "score": 0.054565329838277755,
+    "tta": true
   },
   {
     "file": "000000575500.jpg",
-    "score": 0.00005801868057680366,
+    "score": 0.0000950571221151899,
     "tta": false
   },
   {
     "file": "000000576654.jpg",
-    "score": 0.00005160321379614192,
+    "score": 0.00004817486355124282,
     "tta": false
   },
   {
     "file": "000000578093.jpg",
-    "score": 0.0001348871039806416,
+    "score": 0.00014380982079898296,
     "tta": false
   },
   {
     "file": "000000580418.jpg",
-    "score": 0.00001869006067272534,
+    "score": 0.000019464963245232182,
     "tta": false
   },
   {
     "file": "000000581781.jpg",
-    "score": 0.0006507599515415473,
+    "score": 0.00107414426005503,
     "tta": false
   },
   {
     "file": "fake_r1f1178cet.png",
-    "score": 0.9999945946989247,
+    "score": 0.9999960515657438,
     "tta": false
   },
   {
     "file": "fake_r1f1a3258t.png",
-    "score": 0.9999993234440424,
+    "score": 0.9999993452832613,
     "tta": false
   },
   {
     "file": "fake_r1f2c2acft.png",
-    "score": 0.9999930594666898,
+    "score": 0.9999952743466227,
     "tta": false
   },
   {
     "file": "fake_r1f4a44a7t.png",
-    "score": 0.9999815709241117,
+    "score": 0.999978821439365,
     "tta": false
   },
   {
     "file": "fake_r1f5ad4e0t.png",
-    "score": 0.9999658384276853,
+    "score": 0.9999565453831621,
     "tta": false
   },
   {
     "file": "unsure_cand_448263.jpg",
-    "score": 0.22600542530389592,
+    "score": 0.22804688745442533,
     "tta": true
   },
   {
     "file": "unsure_cand_566282.jpg",
-    "score": 0.32970458327222396,
+    "score": 0.3483790594662727,
     "tta": true
   },
   {
     "file": "unsure_flux2_000048.jpg",
-    "score": 0.9299001297562781,
+    "score": 0.9679841423916685,
     "tta": false
   },
   {
     "file": "unsure_ft44s_real_033.jpg",
-    "score": 0.9151439434870716,
+    "score": 0.8990150359899833,
     "tta": false
   },
   {
     "file": "unsure_ft44s_recraft_024.jpg",
-    "score": 0.3872151999966644,
+    "score": 0.3695823879513436,
     "tta": true
   },
   {
     "file": "unsure_ft44s_reddit_031.jpg",
-    "score": 0.6931300062424421,
+    "score": 0.6319890273136465,
     "tta": true
   }
 ]

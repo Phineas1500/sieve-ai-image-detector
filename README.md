@@ -17,12 +17,17 @@ COCO val2017 + OpenFake reals. Scored at the fixed **0.65** confidence threshold
 
 | condition | balanced accuracy | AI recall | real-photo accuracy |
 |---|---|---|---|
-| clean | **91.6%** | 86.2% | 97.0% |
-| web (≤768px, JPEG q60) | **87.5%** | 78.8% | 96.2% |
-| hard (≤512px, JPEG q40) | **86.2%** | 77.3% | 95.0% |
+| clean | **91.3%** | 85.8% | 96.8% |
+| web (≤768px, JPEG q60) | **87.5%** | 79.1% | 95.9% |
+| hard (≤512px, JPEG q40) | **86.2%** | 77.4% | 95.0% |
 
-Per-category real-photo accuracy and AI recall on the held-out slices (with
-faces as their own rows) is published in [docs/accuracy-v0.12.md](docs/accuracy-v0.12.md).
+The v0.14 model holds the v0.12 benchmark numbers (−0.3 clean, ±0 web/hard)
+while fixing what the benchmark could not see: it false-flagged ~25% of
+ordinary lifestyle photography (Pexels held-out reals 74.9% → 97.4%), and the
+2021–22 generator cohort, FLUX.1-dev at small sizes, faces and press photos
+all move up — the audit-slice table is in
+[docs/accuracy-v0.14.md](docs/accuracy-v0.14.md) (v0.12:
+[docs/accuracy-v0.12.md](docs/accuracy-v0.12.md)).
 
 For reference, the stock Community Forensics base model scores 75.8 / 65.9 / 56.5
 under the same protocol (its detection rate on GPT Image 2 is 7%; ours is >90%).

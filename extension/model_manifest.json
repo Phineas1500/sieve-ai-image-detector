@@ -1,7 +1,7 @@
 {
-  "version": "ft58s-2026-08-28",
-  "model_url": "https://github.com/Phineas1500/sieve-ai-image-detector/releases/download/v0.12.0/ft58s_best_fp16.onnx",
-  "sha256": "b98aac598f7d1e071f041e2baae9870acd780161d7bc6226f5eeb663f4004d54",
+  "version": "w5810-2026-08-30",
+  "model_url": "https://github.com/Phineas1500/sieve-ai-image-detector/releases/download/v0.14.0/w5810_best_fp16.onnx",
+  "sha256": "8392faaf0191c339ed76cf68861b1f4fac15da67e8669fa222e3181c59b2d748",
   "input_size": 384,
   "resize_shorter_side": 440,
   "norm_mean": [
@@ -17,7 +17,7 @@
   "calibration": {
     "type": "sigmoid",
     "temperature": 1.0,
-    "bias": 0.3
+    "bias": 0.2
   },
   "tta": {
     "enabled": true,
